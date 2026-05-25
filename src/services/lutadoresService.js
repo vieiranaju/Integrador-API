@@ -6,6 +6,7 @@
  *   Instância 1 — Spring Boot / Render
  *     Autenticação: nenhuma (API pública)
  *     Respostas: JSON normal
+ *     ⚠️  Path real: /api/lutadores (confirmado via /v3/api-docs)
  *
  *   Instância 2 — Java puro / Heroku (RSA-OAEP bidirecional)
  *     Autenticação: handshake RSA (feito automaticamente no startup)
@@ -72,8 +73,9 @@ async function listar() {
   const resultado = [];
 
   // Instância 1 — sem autenticação, JSON simples
+  // Nota: o path real é /api/lutadores (Spring Boot com prefixo /api)
   try {
-    const resp = await axios.get(`${APIS.lutadores.instancia1.baseUrl}/lutadores`);
+    const resp = await axios.get(`${APIS.lutadores.instancia1.baseUrl}/api/lutadores`);
     resp.data.forEach(item => resultado.push({ ...item, _instancia: 1 }));
   } catch (e) {
     console.warn('[Lutadores I1] Falha no GET:', e.message);
@@ -102,7 +104,7 @@ async function buscarPorId(id, instancia) {
   const inst = Number(instancia) || 1;
 
   if (inst === 1) {
-    const resp = await axios.get(`${APIS.lutadores.instancia1.baseUrl}/lutadores/${id}`);
+    const resp = await axios.get(`${APIS.lutadores.instancia1.baseUrl}/api/lutadores/${id}`);
     return { ...resp.data, _instancia: 1 };
   }
 
@@ -119,9 +121,9 @@ async function criar(campos) {
   cache.invalidar('lutadores:');
   const resultado = {};
 
-  // I1 — Spring Boot aceita JSON no body
+  // I1 — Spring Boot aceita JSON no body (path com prefixo /api)
   try {
-    const resp = await axios.post(`${APIS.lutadores.instancia1.baseUrl}/lutadores`, campos);
+    const resp = await axios.post(`${APIS.lutadores.instancia1.baseUrl}/api/lutadores`, campos);
     resultado.instancia1 = { sucesso: true, dado: { ...resp.data, _instancia: 1 } };
   } catch (e) {
     resultado.instancia1 = { sucesso: false, erro: e.response?.data || e.message };
@@ -151,7 +153,7 @@ async function atualizar(id, campos, instancia) {
   const inst = Number(instancia) || 1;
 
   if (inst === 1) {
-    const resp = await axios.put(`${APIS.lutadores.instancia1.baseUrl}/lutadores/${id}`, campos);
+    const resp = await axios.put(`${APIS.lutadores.instancia1.baseUrl}/api/lutadores/${id}`, campos);
     return { ...resp.data, _instancia: 1 };
   }
 
@@ -170,7 +172,7 @@ async function deletar(id, instancia) {
   const inst = Number(instancia) || 1;
 
   if (inst === 1) {
-    await axios.delete(`${APIS.lutadores.instancia1.baseUrl}/lutadores/${id}`);
+    await axios.delete(`${APIS.lutadores.instancia1.baseUrl}/api/lutadores/${id}`);
     return { mensagem: `Lutador ${id} deletado na instância 1` };
   }
 
