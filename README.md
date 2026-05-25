@@ -1,11 +1,11 @@
-# 🥊 API Integradora — Fight Betting System
+# API Integradora — Fight Betting System
 
 API Gateway centralizada para o sistema distribuído de apostas em lutas da UENP.
 Agrega **4 domínios** com **2 instâncias cada**, totalizando 8 microserviços externos.
 
 ---
 
-## 🚀 Como Rodar
+## Como Rodar
 
 ```bash
 # 1. Instale as dependências
@@ -22,7 +22,7 @@ API disponível em: `http://localhost:4000`
 
 ---
 
-## 🔐 Fluxo de Autenticação
+## Fluxo de Autenticação
 
 ### 1. Login no Integrador
 
@@ -63,7 +63,7 @@ Authorization: Bearer <seu_token>
 
 ---
 
-## 📡 Endpoints
+## Endpoints
 
 | Método | Rota                  | Descrição                            |
 |--------|-----------------------|--------------------------------------|
@@ -98,18 +98,18 @@ Authorization: Bearer <seu_token>
 
 ---
 
-## 🏗️ Arquitetura das APIs Externas
+## Arquitetura das APIs Externas
 
 | Domínio      | I1 — Tech          | I1 — Auth            | I2 — Tech          | I2 — Auth / Cripto        |
 |--------------|--------------------|----------------------|--------------------|---------------------------|
 | **Lutas**    | Spring Boot/Java   | `X-API-KEY`          | FastAPI/Python     | JWT                       |
-| **Lutadores**| Spring Boot/Render | Nenhuma              | Java puro/Heroku   | RSA-OAEP bidirecional 🔐  |
-| **Apostas**  | Node.js/Vercel     | JWT RS256            | Node.js/IP         | RSA-2048 + AES-256-CBC 🔐 |
+| **Lutadores**| Spring Boot/Render | Nenhuma              | Java puro/Heroku   | RSA-OAEP bidirecional  |
+| **Apostas**  | Node.js/Vercel     | JWT RS256            | Node.js/IP         | RSA-2048 + AES-256-CBC  |
 | **Apostadores**| Node.js/Vercel   | JWT HS256            | FastAPI/Render     | Nenhuma (RSA no banco)    |
 
 ---
 
-## 🔐 Como Funciona a Criptografia
+## Como Funciona a Criptografia
 
 ### API Lutadores I2 (RSA-OAEP Bidirecional)
 1. No startup, o integrador **gera um par de chaves RSA-2048**
@@ -124,7 +124,7 @@ Authorization: Bearer <seu_token>
 
 ---
 
-## 📦 Estrutura do Projeto
+## Estrutura do Projeto
 
 ```
 integrador/
@@ -157,7 +157,7 @@ integrador/
 
 ---
 
-## ⚙️ Variáveis de Ambiente
+## Variáveis de Ambiente
 
 | Variável              | Padrão                          | Descrição                          |
 |-----------------------|---------------------------------|------------------------------------|
@@ -172,7 +172,7 @@ integrador/
 
 ---
 
-## 👨‍💻 Projeto Acadêmico
+## Projeto Acadêmico
 
 Disciplina de **Sistemas Distribuídos** — UENP  
 API Integradora (Gateway) que centraliza múltiplos microserviços com autenticações e criptografias heterogêneas.
