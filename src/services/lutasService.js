@@ -6,8 +6,8 @@
  *   Instância 1 — Spring Boot / Railway
  *     Autenticação: API Key fixa no header X-API-KEY
  *
- *   Instância 2 — FastAPI / Python
- *     Autenticação: JWT Bearer (token obtido no login via credenciais do frontend)
+ *   Instância 2 — Vercel / Node.js
+ *     Autenticação: M2M RSA-PSS (headers x-api-nome e x-assinatura)
  *
  * GET lista: busca das duas instâncias e une os resultados
  * GET por ID / PUT / DELETE: escolhe a instância pelo query param ?instancia=1 ou 2
@@ -17,8 +17,8 @@
 
 const axios = require('axios');
 const APIS = require('../config/apis');
-const tokenManager = require('../utils/tokenManager');
 const cache = require('../utils/cache');
+const rsa = require('../utils/rsaHelper');
 
 
 
@@ -27,20 +27,20 @@ function headersI1() {
   return { 'X-API-KEY': APIS.lutas.instancia1.apiKey };
 }
 
-/** Instância 2 usa JWT Bearer da sessão do usuário */
-async function headersI2(sessionId) {
-  let token = tokenManager.getToken(sessionId, 'lutas2');
-  if (!token) {
-    token = await tokenManager.tentarAuthNovamente(sessionId, 'lutas2');
-  }
-  return token ? { Authorization: `Bearer ${token}` } : null;
+/** Instância 2 usa assinatura RSA M2M */
+function headersI2(rota) {
+  const nomeIntegrador = APIS.lutas.instancia2.nomeIntegrador;
+  return {
+    'x-api-nome': nomeIntegrador,
+    'x-assinatura': rsa.gerarAssinaturaLutas2(nomeIntegrador, rota),
+  };
 }
 
 
 
-async function listar(sessionId) {
+async function listar() {
   const cacheKeyI1 = `lutas:lista:i1`; // Não depende da sessão porque I1 usa API Key fixa
-  const cacheKeyI2 = `lutas:lista:i2:${sessionId}`; // Depende da sessão (JWT)
+  const cacheKeyI2 = `lutas:lista:i2`; // Agora I2 também não depende da sessão, é M2M
   
   const emCacheI1 = cache.get(cacheKeyI1);
   const emCacheI2 = cache.get(cacheKeyI2);
@@ -58,11 +58,12 @@ async function listar(sessionId) {
   // Instância 2 (se configurada e com token)
   if (APIS.lutas.instancia2.baseUrl) {
     if (!emCacheI2) {
-      const hdrs2Promise = headersI2(sessionId).then(hdrs2 => {
-        if (!hdrs2) throw new Error('Falha ao reautenticar on-the-fly para I2');
-        return axios.get(`${APIS.lutas.instancia2.baseUrl}/lutas`, { headers: hdrs2, timeout: 15000 });
-      });
-      promessas.push(hdrs2Promise);
+      try {
+        const hdrs2 = headersI2('/lutas/');
+        promessas.push(axios.get(`${APIS.lutas.instancia2.baseUrl}/lutas/`, { headers: hdrs2, timeout: 15000 }));
+      } catch (e) {
+        promessas.push(Promise.reject(e));
+      }
     } else {
       promessas.push(Promise.resolve({ isCache: true, data: emCacheI2, id: 'i2' }));
     }
@@ -85,9 +86,8 @@ async function listar(sessionId) {
         resultado.push(...novos);
       }
     } else {
-      if (!isI1 && res.reason?.response?.status === 401) {
-        console.warn('[Lutas I2] 401 Recebido. Reautenticando próxima vez...');
-        tokenManager.tentarAuthNovamente(sessionId, 'lutas2');
+      if (!isI1) {
+        console.warn('[Lutas I2] Falha M2M. Verifique as chaves e cadastro no Vercel.');
       }
       console.warn(`[Lutas I${isI1 ? 1 : 2}] Falha no GET:`, res.reason.message || res.reason);
     }
@@ -96,7 +96,7 @@ async function listar(sessionId) {
   return resultado;
 }
 
-async function buscarPorId(id, instancia, sessionId) {
+async function buscarPorId(id, instancia) {
   const inst = Number(instancia) || 1;
 
   if (inst === 1) {
@@ -105,13 +105,12 @@ async function buscarPorId(id, instancia, sessionId) {
   }
 
   // Instância 2
-  const hdrs = await headersI2(sessionId);
-  if (!hdrs) throw { status: 401, message: 'Token da Lutas I2 não disponível. Informe as credenciais no login.' };
+  const hdrs = headersI2(`/lutas/${id}`);
   const resp = await axios.get(`${APIS.lutas.instancia2.baseUrl}/lutas/${id}`, { headers: hdrs });
   return { ...resp.data, _instancia: 2 };
 }
 
-async function criar(body, sessionId) {
+async function criar(body) {
   cache.invalidar('lutas:lista');
   const resultado = {};
 
@@ -125,21 +124,19 @@ async function criar(body, sessionId) {
 
   // Cria na instância 2 (se configurada)
   if (APIS.lutas.instancia2.baseUrl) {
-    const hdrs = await headersI2(sessionId);
-    if (hdrs) {
-      try {
-        const resp = await axios.post(`${APIS.lutas.instancia2.baseUrl}/lutas`, body, { headers: hdrs });
-        resultado.instancia2 = { sucesso: true, dado: { ...resp.data, _instancia: 2 } };
-      } catch (e) {
-        resultado.instancia2 = { sucesso: false, erro: e.response?.data || e.message };
-      }
+    try {
+      const hdrs = headersI2('/lutas/');
+      const resp = await axios.post(`${APIS.lutas.instancia2.baseUrl}/lutas/`, body, { headers: hdrs });
+      resultado.instancia2 = { sucesso: true, dado: { ...resp.data, _instancia: 2 } };
+    } catch (e) {
+      resultado.instancia2 = { sucesso: false, erro: e.response?.data || e.message };
     }
   }
 
   return resultado;
 }
 
-async function atualizar(id, body, instancia, sessionId) {
+async function atualizar(id, body, instancia) {
   cache.invalidar('lutas:');
   const inst = Number(instancia) || 1;
 
@@ -148,13 +145,12 @@ async function atualizar(id, body, instancia, sessionId) {
     return { ...resp.data, _instancia: 1 };
   }
 
-  const hdrs = await headersI2(sessionId);
-  if (!hdrs) throw { status: 401, message: 'Token da Lutas I2 não disponível.' };
+  const hdrs = headersI2(`/lutas/${id}`);
   const resp = await axios.put(`${APIS.lutas.instancia2.baseUrl}/lutas/${id}`, body, { headers: hdrs });
   return { ...resp.data, _instancia: 2 };
 }
 
-async function deletar(id, instancia, sessionId) {
+async function deletar(id, instancia) {
   cache.invalidar('lutas:');
   const inst = Number(instancia) || 1;
 
@@ -163,8 +159,7 @@ async function deletar(id, instancia, sessionId) {
     return { mensagem: `Luta ${id} deletada na instância 1` };
   }
 
-  const hdrs = await headersI2(sessionId);
-  if (!hdrs) throw { status: 401, message: 'Token da Lutas I2 não disponível.' };
+  const hdrs = headersI2(`/lutas/${id}`);
   await axios.delete(`${APIS.lutas.instancia2.baseUrl}/lutas/${id}`, { headers: hdrs });
   return { mensagem: `Luta ${id} deletada na instância 2` };
 }

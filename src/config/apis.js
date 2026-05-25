@@ -17,9 +17,10 @@ module.exports = {
       apiKey:  process.env.LUTAS1_API_KEY  || 'bet3M-UENP',
     },
     instancia2: {
-      // FastAPI / Python — URL configurável via .env
-      // Autenticação: JWT Bearer (credenciais informadas no login do frontend)
-      baseUrl: process.env.LUTAS2_BASE_URL || '',
+      // Node.js — Vercel (https://betting-api-beta.vercel.app)
+      // Autenticação: M2M com Assinatura RSA-PSS
+      baseUrl: process.env.LUTAS2_BASE_URL || 'https://betting-api-beta.vercel.app',
+      nomeIntegrador: process.env.NOME_INTEGRADOR || 'bet3M-UENP',
     },
   },
 

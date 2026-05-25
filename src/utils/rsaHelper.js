@@ -20,6 +20,7 @@
  */
 
 const crypto = require('crypto');
+const fs = require('fs');
 
 // Par de chaves do integrador (gerado uma vez no startup)
 let _chavePrivada = null;   // Chave privada PEM — usada para DESCRIPTOGRAFAR
@@ -128,6 +129,38 @@ function criptografarParaApostas2(dados) {
   };
 }
 
+// Chave privada para a API Lutas I2
+let _lutas2ChavePrivada = null;
+
+function carregarChavePrivadaLutas2() {
+  if (_lutas2ChavePrivada) return _lutas2ChavePrivada;
+  
+  if (process.env.PRIVATE_KEY_LUTAS2) {
+    _lutas2ChavePrivada = process.env.PRIVATE_KEY_LUTAS2.replace(/\\n/g, '\n');
+  } else {
+    try {
+      _lutas2ChavePrivada = fs.readFileSync('lutas2_private_key.pem', 'utf8');
+    } catch (e) {
+      console.warn('[RSA] Chave privada lutas2_private_key.pem não encontrada! Lutas I2 falhará.');
+    }
+  }
+  return _lutas2ChavePrivada;
+}
+
+function gerarAssinaturaLutas2(nomeIntegrador, rota) {
+  const privateKey = carregarChavePrivadaLutas2();
+  if (!privateKey) throw new Error("Chave privada da Lutas I2 não configurada.");
+
+  const mensagem = `${nomeIntegrador}:${rota}`;
+  const assinatura = crypto.sign('sha256', Buffer.from(mensagem), {
+    key: privateKey,
+    padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
+    saltLength: crypto.constants.RSA_PSS_SALTLEN_MAX_SIGN,
+  });
+
+  return assinatura.toString('base64');
+}
+
 module.exports = {
   inicializar,
   getChavePublica,
@@ -135,4 +168,5 @@ module.exports = {
   setChaveApostas2,
   temChaveApostas2,
   criptografarParaApostas2,
+  gerarAssinaturaLutas2,
 };

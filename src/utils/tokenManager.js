@@ -20,10 +20,6 @@ const sessoes = new Map();
 
 
 
-/**
- * Tenta registrar um usuário em uma API externa.
- * Cada API pode ter um endpoint de registro diferente — tentamos os mais comuns.
- */
 async function tentarRegistrar(baseUrl, usuario, senha, endpoints) {
   const corpo = { usuario, senha, nome: usuario, username: usuario, password: senha, email: `${usuario}@integrador.com` };
 
@@ -33,7 +29,7 @@ async function tentarRegistrar(baseUrl, usuario, senha, endpoints) {
       console.log(`[TokenManager] Usuário "${usuario}" registrado em ${endpoint}`);
       return true; // Registro bem-sucedido
     } catch (e) {
-      // 409 = usuário já existe (também é OK, o login vai funcionar)
+    
       if (e.response?.status === 409) {
         console.log(`[TokenManager] Usuário já existe em ${endpoint}, tentando login...`);
         return true;
@@ -138,22 +134,7 @@ async function autenticarAPIsExternas(sessionId, credenciais = {}) {
   }
 
   
-  if (credenciais.lutas2 && APIS.lutas.instancia2.baseUrl) {
-    const { usuario, senha } = credenciais.lutas2;
-    try {
-      tokens.lutas2 = await loginComAutoRegistro(
-        APIS.lutas.instancia2.baseUrl,
-        '/login',
-        ['/register', '/auth/register', '/usuarios'],
-        usuario, senha,
-        'access_token' // FastAPI/Python usa 'access_token'
-      );
-      console.log('[TokenManager] Lutas (I2) autenticada');
-    } catch (e) {
-      erros.lutas2 = e.response?.data?.message || e.message;
-      console.warn('[TokenManager] Lutas (I2):', erros.lutas2);
-    }
-  }
+  // API Lutas I2 usa M2M RSA-PSS, não usa JWT com login
 
   // Salva os tokens e credenciais da sessão
   sessoes.set(sessionId, { tokens, credenciais });
@@ -181,8 +162,6 @@ async function tentarAuthNovamente(sessionId, api) {
       token = await loginComAutoRegistro(APIS.apostas.instancia1.baseUrl, '/auth/login', ['/auth/registrar', '/auth/register', '/auth/signup', '/register', '/usuarios'], cred.usuario, cred.senha);
     } else if (api === 'apostadores1') {
       token = await loginComAutoRegistro(APIS.apostadores.instancia1.baseUrl, '/login', ['/register', '/auth/register', '/usuarios', '/auth/signup'], cred.usuario, cred.senha);
-    } else if (api === 'lutas2' && APIS.lutas.instancia2.baseUrl) {
-      token = await loginComAutoRegistro(APIS.lutas.instancia2.baseUrl, '/login', ['/register', '/auth/register', '/usuarios'], cred.usuario, cred.senha, 'access_token');
     }
 
     if (token) {
