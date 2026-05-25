@@ -59,7 +59,16 @@ async function inicializarHandshake() {
 function descriptografarSeNecessario(response) {
   if (response.headers['x-content-encrypted'] === 'true') {
     const chunks = JSON.parse(response.data); // response.data é string pois usamos responseType: 'text'
-    return rsa.descriptografarChunks(chunks);
+    const rawStr = rsa.descriptografarChunks(chunks);
+    
+    // API Heroku retorna JSON malformado com aspas duplas (ex: ""Socrates"")
+    // Repara a string antes de fazer o parse
+    try {
+      return JSON.parse(rawStr);
+    } catch (e) {
+      const repairedStr = rawStr.replace(/""([^"]+)""/g, '"$1"');
+      return JSON.parse(repairedStr);
+    }
   }
   return JSON.parse(response.data);
 }

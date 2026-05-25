@@ -75,7 +75,7 @@ function descriptografarChunks(chunks) {
     bytes.push(...decriptado);
   }
 
-  return JSON.parse(Buffer.from(bytes).toString('utf8'));
+  return Buffer.from(bytes).toString('utf8');
 }
 
 /**
