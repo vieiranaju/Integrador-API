@@ -3,12 +3,14 @@
  *
  * Guarda os tokens JWT das APIs externas para cada usuário logado.
  *
- * Fluxo:
- *   1. Usuário faz login no integrador, enviando também as credenciais das APIs externas
- *   2. O integrador faz login em cada API externa e guarda os tokens aqui
- *   3. Quando o usuário faz uma requisição, o integrador pega o token certo daqui
+ * Fluxo de autenticação em cada API externa:
+ *   1. Tenta fazer login com as credenciais fornecidas
+ *   2. Se receber 401/404 (usuário não existe), tenta registrar o usuário
+ *   3. Após o registro, tenta o login novamente
+ *   4. Salva o token retornado na sessão
  *
- * Conceito de SD: Gerenciamento centralizado de identidade (Single Sign-On simplificado).
+ * Conceito de SD: Gerenciamento centralizado de identidade — o integrador
+ * lida com toda a complexidade de autenticação em múltiplos serviços.
  */
 
 const axios = require('axios');
@@ -17,23 +19,100 @@ const APIS = require('../config/apis');
 // Mapa de sessões: { sessionId → { apostas1: "token...", apostadores1: "token..." } }
 const sessoes = new Map();
 
+// ─── Funções auxiliares de registro ─────────────────────────────────────────
+
 /**
- * Faz login nas APIs externas que precisam de JWT e salva os tokens.
+ * Tenta registrar um usuário em uma API externa.
+ * Cada API pode ter um endpoint de registro diferente — tentamos os mais comuns.
+ */
+async function tentarRegistrar(baseUrl, usuario, senha, endpoints) {
+  const corpo = { usuario, senha, nome: usuario, username: usuario, password: senha, email: `${usuario}@integrador.com` };
+
+  for (const endpoint of endpoints) {
+    try {
+      await axios.post(`${baseUrl}${endpoint}`, corpo, { timeout: 8000 });
+      console.log(`[TokenManager] ✅ Usuário "${usuario}" registrado em ${endpoint}`);
+      return true; // Registro bem-sucedido
+    } catch (e) {
+      // 409 = usuário já existe (também é OK, o login vai funcionar)
+      if (e.response?.status === 409) {
+        console.log(`[TokenManager] Usuário já existe em ${endpoint}, tentando login...`);
+        return true;
+      }
+      // Outros erros: tenta o próximo endpoint
+    }
+  }
+  return false; // Nenhum endpoint de registro funcionou
+}
+
+/**
+ * Tenta fazer login em uma API externa.
+ * Se falhar, tenta registrar o usuário e depois faz login novamente.
+ *
+ * @param {string} baseUrl - URL base da API
+ * @param {string} loginEndpoint - Endpoint de login (ex: '/auth/login')
+ * @param {string[]} registroEndpoints - Endpoints de registro a tentar
+ * @param {string} usuario
+ * @param {string} senha
+ * @param {string} campoToken - Campo onde o token vem na resposta ('token' ou 'access_token')
+ * @returns {string|null} token ou null se falhou
+ */
+async function loginComAutoRegistro(baseUrl, loginEndpoint, registroEndpoints, usuario, senha, campoToken = 'token') {
+  const corpo = { usuario, senha };
+
+  // Tentativa 1: Login direto
+  try {
+    const resp = await axios.post(`${baseUrl}${loginEndpoint}`, corpo, { timeout: 10000 });
+    const token = resp.data[campoToken] || resp.data.token || resp.data.access_token;
+    if (token) return token;
+  } catch (e) {
+    const status = e.response?.status;
+
+    // Se não for erro de credenciais (401/404/400), não adianta tentar registrar
+    if (status && ![400, 401, 404, 422].includes(status)) {
+      throw new Error(`Erro ${status} ao fazer login`);
+    }
+
+    console.log(`[TokenManager] Login falhou (${status}) — tentando registrar o usuário...`);
+  }
+
+  // Tentativa 2: Registra o usuário
+  const registrado = await tentarRegistrar(baseUrl, usuario, senha, registroEndpoints);
+
+  if (!registrado) {
+    throw new Error('Não foi possível registrar o usuário nas APIs externas.');
+  }
+
+  // Tentativa 3: Login após registro
+  const resp = await axios.post(`${baseUrl}${loginEndpoint}`, corpo, { timeout: 10000 });
+  const token = resp.data[campoToken] || resp.data.token || resp.data.access_token;
+  if (!token) throw new Error('Token não retornado após registro.');
+  return token;
+}
+
+// ─── Autenticação principal ──────────────────────────────────────────────────
+
+/**
+ * Faz login (com auto-registro) nas APIs externas e salva os tokens na sessão.
  *
  * @param {string} sessionId - ID único da sessão do usuário
- * @param {object} credenciais - { apostas1: {usuario, senha}, apostadores1: {usuario, senha}, lutas2: {...} }
- * @returns {{ tokens: string[], erros: object }}
+ * @param {object} credenciais - { apostas1: {usuario, senha}, apostadores1: {...}, lutas2: {...} }
  */
 async function autenticarAPIsExternas(sessionId, credenciais = {}) {
   const tokens = {};
   const erros = {};
 
   // --- API Apostas (instância 1) — JWT RS256 ---
+  // Login: POST /auth/login  |  Registro: POST /auth/register
   if (credenciais.apostas1) {
+    const { usuario, senha } = credenciais.apostas1;
     try {
-      const { usuario, senha } = credenciais.apostas1;
-      const resp = await axios.post(`${APIS.apostas.instancia1.baseUrl}/auth/login`, { usuario, senha });
-      tokens.apostas1 = resp.data.token;
+      tokens.apostas1 = await loginComAutoRegistro(
+        APIS.apostas.instancia1.baseUrl,
+        '/auth/login',
+        ['/auth/register', '/auth/signup', '/register', '/usuarios'],
+        usuario, senha
+      );
       console.log('[TokenManager] ✅ Apostas (I1) autenticada');
     } catch (e) {
       erros.apostas1 = e.response?.data?.message || e.message;
@@ -42,11 +121,16 @@ async function autenticarAPIsExternas(sessionId, credenciais = {}) {
   }
 
   // --- API Apostadores (instância 1) — JWT HS256 ---
+  // Login: POST /login  |  Registro: POST /register ou /usuarios
   if (credenciais.apostadores1) {
+    const { usuario, senha } = credenciais.apostadores1;
     try {
-      const { usuario, senha } = credenciais.apostadores1;
-      const resp = await axios.post(`${APIS.apostadores.instancia1.baseUrl}/login`, { usuario, senha });
-      tokens.apostadores1 = resp.data.token;
+      tokens.apostadores1 = await loginComAutoRegistro(
+        APIS.apostadores.instancia1.baseUrl,
+        '/login',
+        ['/register', '/auth/register', '/usuarios', '/auth/signup'],
+        usuario, senha
+      );
       console.log('[TokenManager] ✅ Apostadores (I1) autenticada');
     } catch (e) {
       erros.apostadores1 = e.response?.data?.message || e.message;
@@ -56,10 +140,15 @@ async function autenticarAPIsExternas(sessionId, credenciais = {}) {
 
   // --- API Lutas (instância 2) — JWT (se URL configurada) ---
   if (credenciais.lutas2 && APIS.lutas.instancia2.baseUrl) {
+    const { usuario, senha } = credenciais.lutas2;
     try {
-      const { usuario, senha } = credenciais.lutas2;
-      const resp = await axios.post(`${APIS.lutas.instancia2.baseUrl}/login`, { usuario, senha });
-      tokens.lutas2 = resp.data.token || resp.data.access_token;
+      tokens.lutas2 = await loginComAutoRegistro(
+        APIS.lutas.instancia2.baseUrl,
+        '/login',
+        ['/register', '/auth/register', '/usuarios'],
+        usuario, senha,
+        'access_token' // FastAPI/Python usa 'access_token'
+      );
       console.log('[TokenManager] ✅ Lutas (I2) autenticada');
     } catch (e) {
       erros.lutas2 = e.response?.data?.message || e.message;
@@ -72,6 +161,8 @@ async function autenticarAPIsExternas(sessionId, credenciais = {}) {
 
   return { tokens: Object.keys(tokens), erros };
 }
+
+// ─── Funções de sessão ───────────────────────────────────────────────────────
 
 /** Retorna o token de uma API para uma sessão específica */
 function getToken(sessionId, api) {
