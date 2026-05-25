@@ -72,28 +72,38 @@ async function listar() {
 
   const resultado = [];
 
-  // Instância 1 — sem autenticação, JSON simples
-  // Nota: o path real é /api/lutadores (Spring Boot com prefixo /api)
-  try {
-    const resp = await axios.get(`${APIS.lutadores.instancia1.baseUrl}/api/lutadores`);
-    resp.data.forEach(item => resultado.push({ ...item, _instancia: 1 }));
-  } catch (e) {
-    console.warn('[Lutadores I1] Falha no GET:', e.message);
+  // Busca em paralelo com timeout de 25s para acordar as instâncias que estão dormindo (cold start)
+  const promessas = [
+    axios.get(`${APIS.lutadores.instancia1.baseUrl}/api/lutadores`, { timeout: 25000 }),
+    handshakeConcluido 
+      ? axios.get(`${APIS.lutadores.instancia2.baseUrl}/lutadores`, {
+          timeout: 25000,
+          responseType: 'text',
+          transformResponse: [d => d],
+        })
+      : Promise.reject(new Error('Handshake I2 pendente'))
+  ];
+
+  const [res1, res2] = await Promise.allSettled(promessas);
+
+  // Processa I1
+  if (res1.status === 'fulfilled') {
+    res1.value.data.forEach(item => resultado.push({ ...item, _instancia: 1 }));
+  } else {
+    console.warn('[Lutadores I1] Falha no GET:', res1.reason.message);
   }
 
-  // Instância 2 — resposta criptografada (descriptografada automaticamente)
-  if (handshakeConcluido) {
+  // Processa I2
+  if (res2.status === 'fulfilled') {
     try {
-      const resp = await axios.get(`${APIS.lutadores.instancia2.baseUrl}/lutadores`, {
-        responseType: 'text', // Necessário para não tentar parsear JSON automaticamente
-        transformResponse: [d => d], // Recebemos a string raw para descriptografar
-      });
-      const dados = descriptografarSeNecessario(resp);
+      const dados = descriptografarSeNecessario(res2.value);
       const lista = Array.isArray(dados) ? dados : [dados];
       lista.forEach(item => resultado.push({ ...item, _instancia: 2 }));
-    } catch (e) {
-      console.warn('[Lutadores I2] Falha no GET:', e.message);
+    } catch (err) {
+      console.warn('[Lutadores I2] Erro ao descriptografar:', err.message);
     }
+  } else {
+    console.warn('[Lutadores I2] Falha no GET:', res2.reason.message);
   }
 
   cache.set('lutadores:lista', resultado);
