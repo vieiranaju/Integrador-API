@@ -11,8 +11,8 @@ Agrega **4 domínios** com **2 instâncias cada**, totalizando 8 microserviços 
 # 1. Instale as dependências
 npm install
 
-# 2. Copie e configure o .env
-copy .env.example .env
+# 2. Crie e configure o .env
+touch .env
 
 # 3. Inicie em modo de desenvolvimento
 npm run dev
@@ -150,7 +150,6 @@ integrador/
 │       ├── rsaHelper.js       # RSA-OAEP + AES-256-CBC
 │       ├── cache.js           # Cache em memória (node-cache)
 │       └── tokenManager.js    # Tokens JWT das APIs externas por sessão
-├── .env.example
 ├── .env
 └── package.json
 ```
