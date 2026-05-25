@@ -16,7 +16,7 @@
 const axios = require('axios');
 const APIS = require('../config/apis');
 
-// Mapa de sessões: { sessionId → { apostas1: "token...", apostadores1: "token..." } }
+// Mapa de sessões: { sessionId → { tokens: { apostas1: "token..." }, credenciais: { apostas1: {usuario, senha} } } }
 const sessoes = new Map();
 
 // ─── Funções auxiliares de registro ─────────────────────────────────────────
@@ -156,8 +156,8 @@ async function autenticarAPIsExternas(sessionId, credenciais = {}) {
     }
   }
 
-  // Salva os tokens da sessão
-  sessoes.set(sessionId, tokens);
+  // Salva os tokens e credenciais da sessão
+  sessoes.set(sessionId, { tokens, credenciais });
 
   return { tokens: Object.keys(tokens), erros };
 }
@@ -166,7 +166,35 @@ async function autenticarAPIsExternas(sessionId, credenciais = {}) {
 
 /** Retorna o token de uma API para uma sessão específica */
 function getToken(sessionId, api) {
-  return sessoes.get(sessionId)?.[api] || null;
+  return sessoes.get(sessionId)?.tokens?.[api] || null;
+}
+
+/** Tenta reautenticar uma API on-the-fly se o token falhou/expirou */
+async function tentarAuthNovamente(sessionId, api) {
+  const sessao = sessoes.get(sessionId);
+  if (!sessao || !sessao.credenciais || !sessao.credenciais[api]) return null;
+
+  const cred = sessao.credenciais[api];
+  let token = null;
+
+  try {
+    if (api === 'apostas1') {
+      token = await loginComAutoRegistro(APIS.apostas.instancia1.baseUrl, '/auth/login', ['/auth/register', '/auth/signup', '/register', '/usuarios'], cred.usuario, cred.senha);
+    } else if (api === 'apostadores1') {
+      token = await loginComAutoRegistro(APIS.apostadores.instancia1.baseUrl, '/login', ['/register', '/auth/register', '/usuarios', '/auth/signup'], cred.usuario, cred.senha);
+    } else if (api === 'lutas2' && APIS.lutas.instancia2.baseUrl) {
+      token = await loginComAutoRegistro(APIS.lutas.instancia2.baseUrl, '/login', ['/register', '/auth/register', '/usuarios'], cred.usuario, cred.senha, 'access_token');
+    }
+
+    if (token) {
+      sessao.tokens[api] = token;
+      console.log(`[TokenManager] ✅ Reautenticação on-the-fly concluída para ${api}`);
+      return token;
+    }
+  } catch (e) {
+    console.warn(`[TokenManager] ⚠️  Falha na reautenticação on-the-fly para ${api}:`, e.message);
+  }
+  return null;
 }
 
 /** Remove a sessão ao fazer logout */
@@ -179,4 +207,4 @@ function sessaoExiste(sessionId) {
   return sessoes.has(sessionId);
 }
 
-module.exports = { autenticarAPIsExternas, getToken, removerSessao, sessaoExiste };
+module.exports = { autenticarAPIsExternas, getToken, tentarAuthNovamente, removerSessao, sessaoExiste };

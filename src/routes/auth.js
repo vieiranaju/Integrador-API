@@ -26,8 +26,6 @@ const router = express.Router();
 
 const JWT_SECRET   = process.env.JWT_SECRET   || 'chave_secreta_padrao';
 const JWT_EXPIRES  = process.env.JWT_EXPIRES_IN || '24h';
-const ADMIN_USUARIO = process.env.ADMIN_USUARIO || 'admin';
-const ADMIN_SENHA   = process.env.ADMIN_SENHA   || 'admin123';
 
 // ─── POST /auth/login ────────────────────────────────────────────────────────
 
@@ -38,11 +36,6 @@ router.post('/login', async (req, res, next) => {
     // Validação básica
     if (!usuario || !senha) {
       return res.status(400).json({ erro: 'Informe usuario e senha.' });
-    }
-
-    // Verifica as credenciais do integrador
-    if (usuario !== ADMIN_USUARIO || senha !== ADMIN_SENHA) {
-      return res.status(401).json({ erro: 'Usuário ou senha inválidos.' });
     }
 
     // Cria uma sessão única para este usuário

@@ -67,46 +67,78 @@ function descriptografarSeNecessario(response) {
 // ─── Funções de serviço ─────────────────────────────────────────────────────
 
 async function listar() {
-  const emCache = cache.get('lutadores:lista');
-  if (emCache) return emCache;
-
   const resultado = [];
+  const emCacheI1 = cache.get('lutadores:lista:i1');
+  const emCacheI2 = cache.get('lutadores:lista:i2');
 
-  // Busca em paralelo com timeout de 25s para acordar as instâncias que estão dormindo (cold start)
-  const promessas = [
-    axios.get(`${APIS.lutadores.instancia1.baseUrl}/api/lutadores`, { timeout: 25000 }),
-    handshakeConcluido 
-      ? axios.get(`${APIS.lutadores.instancia2.baseUrl}/lutadores`, {
-          timeout: 25000,
-          responseType: 'text',
-          transformResponse: [d => d],
-        })
-      : Promise.reject(new Error('Handshake I2 pendente'))
-  ];
+  // Retenta o handshake se falhou anteriormente
+  if (!handshakeConcluido) {
+    await inicializarHandshake();
+  }
+
+  // Se já temos as duas em cache, retorna rápido
+  if (emCacheI1 && (emCacheI2 || !handshakeConcluido)) {
+    if (emCacheI1) resultado.push(...emCacheI1);
+    if (emCacheI2) resultado.push(...emCacheI2);
+    return resultado;
+  }
+
+  // Prepara requisições apenas do que falta
+  const promessas = [];
+  if (!emCacheI1) {
+    promessas.push(axios.get(`${APIS.lutadores.instancia1.baseUrl}/api/lutadores`, { timeout: 25000 }));
+  } else {
+    promessas.push(Promise.resolve({ isCache: true, data: emCacheI1, id: 'i1' }));
+  }
+
+  if (!emCacheI2 && handshakeConcluido) {
+    promessas.push(axios.get(`${APIS.lutadores.instancia2.baseUrl}/lutadores`, {
+      timeout: 25000,
+      responseType: 'text',
+      transformResponse: [d => d],
+    }));
+  } else if (emCacheI2) {
+    promessas.push(Promise.resolve({ isCache: true, data: emCacheI2, id: 'i2' }));
+  } else {
+    promessas.push(Promise.reject(new Error('Handshake I2 pendente')));
+  }
 
   const [res1, res2] = await Promise.allSettled(promessas);
 
   // Processa I1
   if (res1.status === 'fulfilled') {
-    res1.value.data.forEach(item => resultado.push({ ...item, _instancia: 1 }));
+    if (res1.value.isCache) {
+      resultado.push(...res1.value.data);
+    } else {
+      const novosI1 = [];
+      res1.value.data.forEach(item => novosI1.push({ ...item, _instancia: 1 }));
+      cache.set('lutadores:lista:i1', novosI1);
+      resultado.push(...novosI1);
+    }
   } else {
     console.warn('[Lutadores I1] Falha no GET:', res1.reason.message);
   }
 
   // Processa I2
   if (res2.status === 'fulfilled') {
-    try {
-      const dados = descriptografarSeNecessario(res2.value);
-      const lista = Array.isArray(dados) ? dados : [dados];
-      lista.forEach(item => resultado.push({ ...item, _instancia: 2 }));
-    } catch (err) {
-      console.warn('[Lutadores I2] Erro ao descriptografar:', err.message);
+    if (res2.value.isCache) {
+      resultado.push(...res2.value.data);
+    } else {
+      try {
+        const dados = descriptografarSeNecessario(res2.value);
+        const lista = Array.isArray(dados) ? dados : [dados];
+        const novosI2 = [];
+        lista.forEach(item => novosI2.push({ ...item, _instancia: 2 }));
+        cache.set('lutadores:lista:i2', novosI2);
+        resultado.push(...novosI2);
+      } catch (err) {
+        console.warn('[Lutadores I2] Erro ao descriptografar:', err.message);
+      }
     }
   } else {
     console.warn('[Lutadores I2] Falha no GET:', res2.reason.message);
   }
 
-  cache.set('lutadores:lista', resultado);
   return resultado;
 }
 

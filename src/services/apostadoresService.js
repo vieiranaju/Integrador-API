@@ -23,8 +23,11 @@ const cache = require('../utils/cache');
 
 // ─── Headers ────────────────────────────────────────────────────────────────
 
-function headersI1(sessionId) {
-  const token = tokenManager.getToken(sessionId, 'apostadores1');
+async function headersI1(sessionId) {
+  let token = tokenManager.getToken(sessionId, 'apostadores1');
+  if (!token) {
+    token = await tokenManager.tentarAuthNovamente(sessionId, 'apostadores1');
+  }
   return token ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } : null;
 }
 
@@ -51,34 +54,71 @@ function paraI2(body) {
 // ─── Funções de serviço ─────────────────────────────────────────────────────
 
 async function listar(sessionId) {
-  const chaveCache = `apostadores:lista:${sessionId}`;
-  const emCache = cache.get(chaveCache);
-  if (emCache) return emCache;
-
   const resultado = [];
+  const emCacheI1 = cache.get(`apostadores:lista:i1:${sessionId}`);
+  const emCacheI2 = cache.get('apostadores:lista:i2');
 
-  // Instância 1 — precisa de token JWT
-  const hdrs1 = headersI1(sessionId);
-  if (hdrs1) {
-    try {
-      const resp = await axios.get(`${APIS.apostadores.instancia1.baseUrl}/apostadores`, { headers: hdrs1 });
-      resp.data.forEach(item => resultado.push({ ...item, _instancia: 1 }));
-    } catch (e) {
-      console.warn('[Apostadores I1] Falha no GET:', e.message);
+  if (emCacheI1 && emCacheI2) {
+    resultado.push(...emCacheI1, ...emCacheI2);
+    return resultado;
+  }
+
+  const promessas = [];
+
+  // Instância 1
+  if (!emCacheI1) {
+    // A função headersI1 já tenta reautenticar se o token estiver ausente
+    const hdrs1Promise = headersI1(sessionId).then(hdrs1 => {
+      if (!hdrs1) throw new Error('Falha ao reautenticar on-the-fly para I1');
+      return axios.get(`${APIS.apostadores.instancia1.baseUrl}/apostadores`, { headers: hdrs1, timeout: 15000 });
+    });
+    promessas.push(hdrs1Promise);
+  } else {
+    promessas.push(Promise.resolve({ isCache: true, data: emCacheI1, id: 'i1' }));
+  }
+
+  // Instância 2
+  if (!emCacheI2) {
+    promessas.push(axios.get(`${APIS.apostadores.instancia2.baseUrl}/apostadores/`, { timeout: 15000 }));
+  } else {
+    promessas.push(Promise.resolve({ isCache: true, data: emCacheI2, id: 'i2' }));
+  }
+
+  const [res1, res2] = await Promise.allSettled(promessas);
+
+  // Processa I1
+  if (res1.status === 'fulfilled') {
+    if (res1.value.isCache) {
+      resultado.push(...res1.value.data);
+    } else {
+      const novosI1 = [];
+      res1.value.data.forEach(item => novosI1.push({ ...item, _instancia: 1 }));
+      cache.set(`apostadores:lista:i1:${sessionId}`, novosI1);
+      resultado.push(...novosI1);
     }
   } else {
-    console.warn('[Apostadores I1] Token não disponível. Informe credenciais apostadores1 no login.');
+    // Se falhar com 401 mesmo após o retry (token velho/expirado na sessão)
+    if (res1.reason?.response?.status === 401) {
+      console.warn('[Apostadores I1] 401 Recebido. Reautenticando próxima vez...');
+      tokenManager.tentarAuthNovamente(sessionId, 'apostadores1'); // Deixa preparado pro próximo F5
+    }
+    console.warn('[Apostadores I1] Falha no GET:', res1.reason.message || res1.reason);
   }
 
-  // Instância 2 — pública, sem autenticação
-  try {
-    const resp = await axios.get(`${APIS.apostadores.instancia2.baseUrl}/apostadores/`);
-    resp.data.forEach(item => resultado.push({ ...item, _instancia: 2 }));
-  } catch (e) {
-    console.warn('[Apostadores I2] Falha no GET:', e.message);
+  // Processa I2
+  if (res2.status === 'fulfilled') {
+    if (res2.value.isCache) {
+      resultado.push(...res2.value.data);
+    } else {
+      const novosI2 = [];
+      res2.value.data.forEach(item => novosI2.push({ ...item, _instancia: 2 }));
+      cache.set('apostadores:lista:i2', novosI2);
+      resultado.push(...novosI2);
+    }
+  } else {
+    console.warn('[Apostadores I2] Falha no GET:', res2.reason.message);
   }
 
-  cache.set(chaveCache, resultado);
   return resultado;
 }
 
@@ -86,7 +126,7 @@ async function buscarPorId(id, instancia, sessionId) {
   const inst = Number(instancia) || 1;
 
   if (inst === 1) {
-    const hdrs = headersI1(sessionId);
+    const hdrs = await headersI1(sessionId);
     if (!hdrs) throw { status: 401, message: 'Token da Apostadores I1 não disponível. Informe credenciais no login.' };
     const resp = await axios.get(`${APIS.apostadores.instancia1.baseUrl}/apostadores/${id}`, { headers: hdrs });
     return { ...resp.data, _instancia: 1 };
@@ -101,7 +141,7 @@ async function criar(body, sessionId) {
   const resultado = {};
 
   // Instância 1 — JWT + camelCase
-  const hdrs1 = headersI1(sessionId);
+  const hdrs1 = await headersI1(sessionId);
   if (hdrs1) {
     try {
       const resp = await axios.post(`${APIS.apostadores.instancia1.baseUrl}/apostadores`, paraI1(body), { headers: hdrs1 });
@@ -129,7 +169,7 @@ async function atualizar(id, body, instancia, sessionId) {
   const inst = Number(instancia) || 1;
 
   if (inst === 1) {
-    const hdrs = headersI1(sessionId);
+    const hdrs = await headersI1(sessionId);
     if (!hdrs) throw { status: 401, message: 'Token da Apostadores I1 não disponível.' };
     const resp = await axios.put(`${APIS.apostadores.instancia1.baseUrl}/apostadores/${id}`, paraI1(body), { headers: hdrs });
     return { ...resp.data, _instancia: 1 };
@@ -144,7 +184,7 @@ async function deletar(id, instancia, sessionId) {
   const inst = Number(instancia) || 1;
 
   if (inst === 1) {
-    const hdrs = headersI1(sessionId);
+    const hdrs = await headersI1(sessionId);
     if (!hdrs) throw { status: 401, message: 'Token da Apostadores I1 não disponível.' };
     await axios.delete(`${APIS.apostadores.instancia1.baseUrl}/apostadores/${id}`, { headers: hdrs });
     return { mensagem: `Apostador ${id} deletado na instância 1` };

@@ -45,8 +45,11 @@ async function inicializarApostas2() {
 
 // ─── Headers ────────────────────────────────────────────────────────────────
 
-function headersI1(sessionId) {
-  const token = tokenManager.getToken(sessionId, 'apostas1');
+async function headersI1(sessionId) {
+  let token = tokenManager.getToken(sessionId, 'apostas1');
+  if (!token) {
+    token = await tokenManager.tentarAuthNovamente(sessionId, 'apostas1');
+  }
   return token ? { Authorization: `Bearer ${token}` } : null;
 }
 
@@ -54,38 +57,80 @@ function headersI1(sessionId) {
 
 async function listar(sessionId, filtros = {}) {
   const queryStr = new URLSearchParams(filtros).toString();
-  const chaveCache = `apostas:lista:${sessionId}:${queryStr}`;
-  const emCache = cache.get(chaveCache);
-  if (emCache) return emCache;
+  const cacheKeyI1 = `apostas:lista:i1:${sessionId}:${queryStr}`;
+  const cacheKeyI2 = `apostas:lista:i2:${queryStr}`;
 
+  const emCacheI1 = cache.get(cacheKeyI1);
+  const emCacheI2 = cache.get(cacheKeyI2);
   const resultado = [];
 
-  // Instância 1 — precisa de token JWT
-  const hdrs1 = headersI1(sessionId);
-  if (hdrs1) {
-    try {
-      const url = `${APIS.apostas.instancia1.baseUrl}/apostas${queryStr ? '?' + queryStr : ''}`;
-      const resp = await axios.get(url, { headers: hdrs1 });
-      resp.data.forEach(item => resultado.push({ ...item, _instancia: 1 }));
-    } catch (e) {
-      console.warn('[Apostas I1] Falha no GET:', e.message);
-    }
-  } else {
-    console.warn('[Apostas I1] Token não disponível. Informe credenciais apostas1 no login.');
+  if (!chaveI2Carregada) {
+    await inicializarApostas2();
   }
 
-  // Instância 2 — X-Encrypted: true obrigatório (GET não criptografa o body, só o header)
-  try {
-    const resp = await axios.get(`${APIS.apostas.instancia2.baseUrl}/apostas`, {
+  if (emCacheI1 && emCacheI2) {
+    resultado.push(...emCacheI1, ...emCacheI2);
+    return resultado;
+  }
+
+  const promessas = [];
+
+  // Instância 1
+  if (!emCacheI1) {
+    const url = `${APIS.apostas.instancia1.baseUrl}/apostas${queryStr ? '?' + queryStr : ''}`;
+    const hdrs1Promise = headersI1(sessionId).then(hdrs1 => {
+      if (!hdrs1) throw new Error('Falha ao reautenticar on-the-fly para I1');
+      return axios.get(url, { headers: hdrs1, timeout: 15000 });
+    });
+    promessas.push(hdrs1Promise);
+  } else {
+    promessas.push(Promise.resolve({ isCache: true, data: emCacheI1, id: 'i1' }));
+  }
+
+  // Instância 2
+  if (!emCacheI2) {
+    promessas.push(axios.get(`${APIS.apostas.instancia2.baseUrl}/apostas`, {
       headers: { 'X-Encrypted': 'true' },
       timeout: 15000,
-    });
-    resp.data.forEach(item => resultado.push({ ...item, _instancia: 2 }));
-  } catch (e) {
-    console.warn('[Apostas I2] Falha no GET:', e.message);
+    }));
+  } else {
+    promessas.push(Promise.resolve({ isCache: true, data: emCacheI2, id: 'i2' }));
   }
 
-  cache.set(chaveCache, resultado, 30000); // Cache curto para dados financeiros (30s)
+  const [res1, res2] = await Promise.allSettled(promessas);
+
+  // Processa I1
+  if (res1.status === 'fulfilled') {
+    if (res1.value.isCache) {
+      resultado.push(...res1.value.data);
+    } else {
+      const novosI1 = [];
+      res1.value.data.forEach(item => novosI1.push({ ...item, _instancia: 1 }));
+      cache.set(cacheKeyI1, novosI1, 30000);
+      resultado.push(...novosI1);
+    }
+  } else {
+    if (res1.reason?.response?.status === 401) {
+      console.warn('[Apostas I1] 401 Recebido. Reautenticando próxima vez...');
+      tokenManager.tentarAuthNovamente(sessionId, 'apostas1');
+    }
+    console.warn('[Apostas I1] Falha no GET:', res1.reason.message || res1.reason);
+  }
+
+  // Processa I2
+  if (res2.status === 'fulfilled') {
+    if (res2.value.isCache) {
+      resultado.push(...res2.value.data);
+    } else {
+      const novosI2 = [];
+      res2.value.data.forEach(item => novosI2.push({ ...item, _instancia: 2 }));
+      cache.set(cacheKeyI2, novosI2, 30000);
+      resultado.push(...novosI2);
+    }
+  } else {
+    console.warn('[Apostas I2] Falha no GET:', res2.reason.message);
+  }
+
   return resultado;
 }
 
@@ -93,7 +138,7 @@ async function buscarPorId(id, instancia, sessionId) {
   const inst = Number(instancia) || 1;
 
   if (inst === 1) {
-    const hdrs = headersI1(sessionId);
+    const hdrs = await headersI1(sessionId);
     if (!hdrs) throw { status: 401, message: 'Token da Apostas I1 não disponível. Informe credenciais no login.' };
     const resp = await axios.get(`${APIS.apostas.instancia1.baseUrl}/apostas/${id}`, { headers: hdrs });
     return { ...resp.data, _instancia: 1 };
@@ -110,7 +155,7 @@ async function criar(body, sessionId) {
   const resultado = {};
 
   // Instância 1 — JWT Bearer no header, body JSON normal
-  const hdrs1 = headersI1(sessionId);
+  const hdrs1 = await headersI1(sessionId);
   if (hdrs1) {
     try {
       const resp = await axios.post(`${APIS.apostas.instancia1.baseUrl}/apostas`, body, { headers: hdrs1 });
@@ -151,7 +196,7 @@ async function atualizar(id, body, instancia, sessionId) {
   const inst = Number(instancia) || 1;
 
   if (inst === 1) {
-    const hdrs = headersI1(sessionId);
+    const hdrs = await headersI1(sessionId);
     if (!hdrs) throw { status: 401, message: 'Token da Apostas I1 não disponível.' };
     const resp = await axios.put(`${APIS.apostas.instancia1.baseUrl}/apostas/${id}`, body, { headers: hdrs });
     return { ...resp.data, _instancia: 1 };
@@ -169,7 +214,7 @@ async function deletar(id, instancia, sessionId) {
   const inst = Number(instancia) || 1;
 
   if (inst === 1) {
-    const hdrs = headersI1(sessionId);
+    const hdrs = await headersI1(sessionId);
     if (!hdrs) throw { status: 401, message: 'Token da Apostas I1 não disponível.' };
     await axios.delete(`${APIS.apostas.instancia1.baseUrl}/apostas/${id}`, { headers: hdrs });
     return { mensagem: `Aposta ${id} deletada na instância 1` };
