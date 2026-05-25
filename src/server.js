@@ -1,16 +1,5 @@
 /**
  * server.js — Ponto de entrada da API Integradora
- *
- * Este arquivo:
- *   1. Carrega as variáveis de ambiente (.env)
- *   2. Prepara as criptografias necessárias (RSA)
- *   3. Registra todas as rotas
- *   4. Inicia o servidor na porta configurada
- *
- * múltiplos microserviços distribuídos de forma transparente para o cliente.
- *
- * Fluxo de uma requisição:
- *   Frontend → /lutas → verificarToken → lutasService → API Lutas (I1 + I2) → resposta unificada
  */
 
 require('dotenv').config();

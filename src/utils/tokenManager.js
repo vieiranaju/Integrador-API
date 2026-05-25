@@ -2,14 +2,6 @@
  * tokenManager.js
  *
  * Guarda os tokens JWT das APIs externas para cada usuário logado.
- *
- * Fluxo de autenticação em cada API externa:
- *   1. Tenta fazer login com as credenciais fornecidas
- *   2. Se receber 401/404 (usuário não existe), tenta registrar o usuário
- *   3. Após o registro, tenta o login novamente
- *   4. Salva o token retornado na sessão
- *
- * lida com toda a complexidade de autenticação em múltiplos serviços.
  */
 
 const axios = require('axios');
