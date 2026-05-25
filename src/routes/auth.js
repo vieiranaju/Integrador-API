@@ -1,21 +1,12 @@
-/**
- * routes/auth.js
- *
- * POST /auth/login   — Valida credenciais, autentica APIs externas e retorna JWT.
- * POST /auth/logout  — Remove a sessão do servidor.
- * GET  /auth/status  — Verifica se o token ainda está válido.
- */
-
-const express = require('express');
-const jwt = require('jsonwebtoken');
+const express      = require('express');
+const jwt          = require('jsonwebtoken');
 const { v4: uuid } = require('uuid');
 const tokenManager = require('../utils/tokenManager');
 const verificarToken = require('../middleware/auth');
 
-const router = express.Router();
-
-const JWT_SECRET   = process.env.JWT_SECRET   || 'chave_secreta_padrao';
-const JWT_EXPIRES  = process.env.JWT_EXPIRES_IN || '24h';
+const router     = express.Router();
+const JWT_SECRET  = process.env.JWT_SECRET   || 'chave_secreta_padrao';
+const JWT_EXPIRES = process.env.JWT_EXPIRES_IN || '24h';
 
 router.post('/login', async (req, res, next) => {
   try {
@@ -26,25 +17,17 @@ router.post('/login', async (req, res, next) => {
     }
 
     const sessionId = uuid();
+    const { tokens: autenticadas, erros } = await tokenManager.autenticarAPIsExternas(sessionId, credenciaisExternas);
 
-    const { tokens: autenticadas, erros } = await tokenManager.autenticarAPIsExternas(
-      sessionId,
-      credenciaisExternas
-    );
-
-    const token = jwt.sign(
-      { sub: usuario, sessionId },
-      JWT_SECRET,
-      { expiresIn: JWT_EXPIRES }
-    );
+    const token = jwt.sign({ sub: usuario, sessionId }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
 
     res.json({
-      mensagem: 'Login realizado com sucesso!',
+      mensagem:       'Login realizado com sucesso!',
       token,
-      tipo: 'Bearer',
-      expira_em: JWT_EXPIRES,
+      tipo:           'Bearer',
+      expira_em:      JWT_EXPIRES,
       apisAutenticadas: autenticadas,
-      erros: Object.keys(erros).length ? erros : undefined,
+      erros:          Object.keys(erros).length ? erros : undefined,
     });
   } catch (err) {
     next(err);
@@ -58,7 +41,7 @@ router.post('/logout', verificarToken, (req, res) => {
 
 router.get('/status', verificarToken, (req, res) => {
   res.json({
-    usuario: req.usuario.sub,
+    usuario:     req.usuario.sub,
     sessaoAtiva: tokenManager.sessaoExiste(req.usuario.sessionId),
   });
 });
