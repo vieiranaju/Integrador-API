@@ -9,9 +9,8 @@
  *   Instância 2 — Vercel / Node.js
  *     Autenticação: M2M RSA-PSS (headers x-api-nome e x-assinatura)
  *
- * GET lista: load balancer aleatório (50/50) com fallback
- * GET por ID: load balancer aleatório (50/50) com fallback
- * PUT / DELETE: escolhe a instância pelo query param ?instancia=1 ou 2
+ * GET lista: busca das duas instâncias e une os resultados
+ * GET por ID / PUT / DELETE: escolhe a instância pelo query param ?instancia=1 ou 2
  * POST: envia para as duas instâncias (best-effort — falha em uma não cancela a outra)
  *
  */
@@ -40,65 +39,75 @@ function headersI2(rota) {
 
 
 async function listar() {
-  const cacheKey = `lutas:lista:lb`;
-  const emCache = cache.get(cacheKey);
-  if (emCache) return emCache;
+  const cacheKeyI1 = `lutas:lista:i1`; // Não depende da sessão porque I1 usa API Key fixa
+  const cacheKeyI2 = `lutas:lista:i2`; // Agora I2 também não depende da sessão, é M2M
+  
+  const emCacheI1 = cache.get(cacheKeyI1);
+  const emCacheI2 = cache.get(cacheKeyI2);
+  const resultado = [];
 
-  const first = Math.random() > 0.5;
+  const promessas = [];
 
-  async function fetchInstancia(isI1) {
-    if (isI1) {
-      const res = await axios.get(`${APIS.lutas.instancia1.baseUrl}/lutas`, { headers: headersI1(), timeout: 15000 });
-      return res.data.map(item => ({ ...item, _instancia: 1 }));
+  // Instância 1
+  if (!emCacheI1) {
+    promessas.push(axios.get(`${APIS.lutas.instancia1.baseUrl}/lutas`, { headers: headersI1(), timeout: 15000 }));
+  } else {
+    promessas.push(Promise.resolve({ isCache: true, data: emCacheI1, id: 'i1' }));
+  }
+
+  // Instância 2 (se configurada e com token)
+  if (APIS.lutas.instancia2.baseUrl) {
+    if (!emCacheI2) {
+      try {
+        const hdrs2 = headersI2('/lutas/');
+        promessas.push(axios.get(`${APIS.lutas.instancia2.baseUrl}/lutas/`, { headers: hdrs2, timeout: 15000 }));
+      } catch (e) {
+        promessas.push(Promise.reject(e));
+      }
     } else {
-      if (!APIS.lutas.instancia2.baseUrl) throw new Error("I2 não configurada");
-      const hdrs = headersI2('/lutas/');
-      const res = await axios.get(`${APIS.lutas.instancia2.baseUrl}/lutas/`, { headers: hdrs, timeout: 15000 });
-      return res.data.map(item => ({ ...item, _instancia: 2 }));
+      promessas.push(Promise.resolve({ isCache: true, data: emCacheI2, id: 'i2' }));
     }
   }
 
-  try {
-    const data = await fetchInstancia(first);
-    cache.set(cacheKey, data);
-    return data;
-  } catch (err) {
-    console.warn(`[Lutas] Falha na API (I${first ? 1 : 2}):`, err.message, '- Tentando fallback...');
-    try {
-      const data = await fetchInstancia(!first);
-      cache.set(cacheKey, data);
-      return data;
-    } catch (err2) {
-      throw { status: 500, message: `Ambas instâncias de Lutas falharam. Erro final: ${err2.message}` };
+  const resultados = await Promise.allSettled(promessas);
+
+  // Processa resultados (podem ser 1 ou 2 promises dependendo de APIS.lutas.instancia2.baseUrl)
+  for (let i = 0; i < resultados.length; i++) {
+    const res = resultados[i];
+    const isI1 = (i === 0);
+
+    if (res.status === 'fulfilled') {
+      if (res.value.isCache) {
+        resultado.push(...res.value.data);
+      } else {
+        const novos = [];
+        res.value.data.forEach(item => novos.push({ ...item, _instancia: isI1 ? 1 : 2 }));
+        cache.set(isI1 ? cacheKeyI1 : cacheKeyI2, novos);
+        resultado.push(...novos);
+      }
+    } else {
+      if (!isI1) {
+        console.warn('[Lutas I2] Falha M2M. Verifique as chaves e cadastro no Vercel.');
+      }
+      console.warn(`[Lutas I${isI1 ? 1 : 2}] Falha no GET:`, res.reason.message || res.reason);
     }
   }
+
+  return resultado;
 }
 
-async function buscarPorId(id) {
-  const first = Math.random() > 0.5;
+async function buscarPorId(id, instancia) {
+  const inst = Number(instancia) || 1;
 
-  async function fetchInstancia(isI1) {
-    if (isI1) {
-      const res = await axios.get(`${APIS.lutas.instancia1.baseUrl}/lutas/${id}`, { headers: headersI1(), timeout: 15000 });
-      return { ...res.data, _instancia: 1 };
-    } else {
-      if (!APIS.lutas.instancia2.baseUrl) throw new Error("I2 não configurada");
-      const hdrs = headersI2(`/lutas/${id}`);
-      const res = await axios.get(`${APIS.lutas.instancia2.baseUrl}/lutas/${id}`, { headers: hdrs, timeout: 15000 });
-      return { ...res.data, _instancia: 2 };
-    }
+  if (inst === 1) {
+    const resp = await axios.get(`${APIS.lutas.instancia1.baseUrl}/lutas/${id}`, { headers: headersI1() });
+    return { ...resp.data, _instancia: 1 };
   }
 
-  try {
-    return await fetchInstancia(first);
-  } catch (err) {
-    console.warn(`[Lutas] Falha ao buscar ID ${id} na API (I${first ? 1 : 2}):`, err.message, '- Tentando fallback...');
-    try {
-      return await fetchInstancia(!first);
-    } catch (err2) {
-      throw { status: 404, message: `Luta ${id} não encontrada em nenhuma instância (Erro: ${err2.message})` };
-    }
-  }
+  // Instância 2
+  const hdrs = headersI2(`/lutas/${id}`);
+  const resp = await axios.get(`${APIS.lutas.instancia2.baseUrl}/lutas/${id}`, { headers: hdrs });
+  return { ...resp.data, _instancia: 2 };
 }
 
 async function criar(body) {
