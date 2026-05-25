@@ -1,14 +1,12 @@
 /**
- * middleware/auth.js
- * Verifica o token JWT antes de processar qualquer rota protegida.
- * Se o token for válido, disponibiliza os dados do usuário em req.usuario.
+ * middleware/auth.js — Valida o token JWT antes de processar rotas protegidas.
+ * Disponibiliza os dados do usuário em req.usuario se o token for válido.
  */
 const jwt = require('jsonwebtoken');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'chave_secreta_padrao';
 
 function verificarToken(req, res, next) {
-  // O token deve vir no header: Authorization: Bearer <token>
   const authHeader = req.headers['authorization'];
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -20,10 +18,9 @@ function verificarToken(req, res, next) {
   const token = authHeader.split(' ')[1];
 
   try {
-    // jwt.verify lança exceção se o token for inválido ou expirado
     const payload = jwt.verify(token, JWT_SECRET);
-    req.usuario = payload; // { sub: "admin", sessionId: "uuid", iat, exp }
-    next(); // Continua para a rota
+    req.usuario = payload;
+    next();
   } catch (err) {
     const mensagem =
       err.name === 'TokenExpiredError'

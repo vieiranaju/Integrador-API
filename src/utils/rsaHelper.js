@@ -1,32 +1,17 @@
 /**
- * rsaHelper.js
+ * rsaHelper.js — Criptografia assimétrica usada pelo integrador.
  *
- * Centraliza toda a criptografia assimétrica usada pelo integrador.
- *
- * Este arquivo lida com dois tipos de criptografia:
- *
- * 1. RSA-OAEP (para API Lutadores I2 — Heroku)
- *    - O servidor criptografa as respostas com a nossa chave pública
- *    - Nós descriptografamos com a nossa chave privada
- *    - As respostas chegam como um array de "pedaços" (chunks) em Base64
- *
- * 2. RSA + AES-256-CBC Híbrido (para API Apostas I2 — 187.77.235.119:5555)
- *    - RSA sozinho não suporta dados grandes (max ~190 bytes)
- *    - Solução: criptografar os DADOS com AES (rápido, sem limite)
- *              e a CHAVE AES com RSA (seguro)
- *    - Enviamos: { encryptedKey, iv, encryptedData }
- *
- * em comunicações entre microserviços distribuídos.
+ * RSA-OAEP: descriptografa respostas da API Lutadores I2 (chunks Base64).
+ * RSA+AES-256-CBC híbrido: criptografa dados enviados à API Apostas I2.
+ * RSA-PSS + SHA256: gera assinaturas M2M para a API Lutas I2.
  */
 
 const crypto = require('crypto');
 const fs = require('fs');
 
-// Par de chaves do integrador (gerado uma vez no startup)
-let _chavePrivada = null;   // Chave privada PEM — usada para DESCRIPTOGRAFAR
-let _chavePublicaB64 = null; // Chave pública Base64 — enviada no handshake
+let _chavePrivada = null;
+let _chavePublicaB64 = null;
 
-// Chave pública da API Apostas I2 — usada para CRIPTOGRAFAR os dados enviados
 let _apostas2ChavePublica = null;
 
 /**
@@ -39,8 +24,8 @@ async function inicializar() {
       'rsa',
       {
         modulusLength: 2048,
-        publicKeyEncoding: { type: 'spki', format: 'der' },   // DER para enviar como Base64
-        privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, // PEM para usar no Node
+        publicKeyEncoding: { type: 'spki', format: 'der' },
+        privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
       },
       (err, chavePublicaDer, chavePrivadaPem) => {
         if (err) return reject(err);
@@ -61,7 +46,9 @@ function getChavePublica() {
 /**
  * Descriptografa a resposta da API Lutadores I2.
  * A resposta chega como um array de strings Base64 (cada uma é um "chunk" RSA).
- * Juntamos todos os bytes descriptografados e fazemos JSON.parse.
+ *
+ * @param {string[]} chunks
+ * @returns {string} JSON string descriptografado
  */
 function descriptografarChunks(chunks) {
   const bytes = [];
@@ -80,6 +67,7 @@ function descriptografarChunks(chunks) {
 
 /**
  * Armazena a chave pública da API Apostas I2 para criptografar os dados enviados.
+ * @param {string} pemOuString
  */
 function setChaveApostas2(pemOuString) {
   _apostas2ChavePublica = pemOuString;
@@ -92,29 +80,24 @@ function temChaveApostas2() {
 
 /**
  * Criptografa dados com RSA+AES para enviar à API Apostas I2.
+ * Retorna { encryptedKey, iv, encryptedData }.
  *
- * Passo a passo:
- *   1. Gera uma chave AES aleatória de 256 bits
- *   2. Criptografa os dados com AES-256-CBC (rápido para dados grandes)
- *   3. Criptografa a chave AES com RSA (seguro para chaves pequenas)
- *   4. Retorna { encryptedKey, iv, encryptedData } que a API espera
+ * @param {object|string} dados
+ * @returns {{ encryptedKey: string, iv: string, encryptedData: string }}
  */
 function criptografarParaApostas2(dados) {
   if (!_apostas2ChavePublica) {
     throw new Error('[RSA] Chave pública da API Apostas I2 não foi carregada ainda.');
   }
 
-  // Gera chave AES e vetor de inicialização aleatórios
-  const chaveAES = crypto.randomBytes(32); // 256 bits
-  const iv = crypto.randomBytes(16);       // 128 bits
+  const chaveAES = crypto.randomBytes(32);
+  const iv = crypto.randomBytes(16);
 
-  // Criptografa os dados com AES
   const cipher = crypto.createCipheriv('aes-256-cbc', chaveAES, iv);
   const dadosStr = typeof dados === 'string' ? dados : JSON.stringify(dados);
   let dadosCriptografados = cipher.update(dadosStr, 'utf8', 'base64');
   dadosCriptografados += cipher.final('base64');
 
-  // Criptografa a chave AES com RSA
   const chaveCriptografada = crypto
     .publicEncrypt(
       { key: _apostas2ChavePublica, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
@@ -129,27 +112,36 @@ function criptografarParaApostas2(dados) {
   };
 }
 
-// Chave privada para a API Lutas I2
 let _lutas2ChavePrivada = null;
 
 function carregarChavePrivadaLutas2() {
   if (_lutas2ChavePrivada) return _lutas2ChavePrivada;
-  
-  if (process.env.PRIVATE_KEY_LUTAS2) {
-    _lutas2ChavePrivada = process.env.PRIVATE_KEY_LUTAS2.replace(/\\n/g, '\n');
+
+  // Aceita PRIVATE_KEY_LUTAS2 (nome interno) ou PRIVATE_KEY_PEM (nome da documentação/Railway)
+  const rawKey = process.env.PRIVATE_KEY_LUTAS2 || process.env.PRIVATE_KEY_PEM;
+
+  if (rawKey) {
+    _lutas2ChavePrivada = rawKey.replace(/\\n/g, '\n');
   } else {
     try {
       _lutas2ChavePrivada = fs.readFileSync('lutas2_private_key.pem', 'utf8');
     } catch (e) {
-      console.warn('[RSA] Chave privada lutas2_private_key.pem não encontrada! Lutas I2 falhará.');
+      console.warn('[RSA] Chave privada não encontrada! Configure PRIVATE_KEY_LUTAS2 ou PRIVATE_KEY_PEM no Railway.');
     }
   }
   return _lutas2ChavePrivada;
 }
 
+/**
+ * Gera assinatura RSA-PSS para autenticação M2M na API Lutas I2.
+ *
+ * @param {string} nomeIntegrador
+ * @param {string} rota
+ * @returns {string} Assinatura em Base64
+ */
 function gerarAssinaturaLutas2(nomeIntegrador, rota) {
   const privateKey = carregarChavePrivadaLutas2();
-  if (!privateKey) throw new Error("Chave privada da Lutas I2 não configurada.");
+  if (!privateKey) throw new Error('Chave privada da Lutas I2 não configurada.');
 
   const mensagem = `${nomeIntegrador}:${rota}`;
   const assinatura = crypto.sign('sha256', Buffer.from(mensagem), {
