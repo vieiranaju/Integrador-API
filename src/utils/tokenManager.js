@@ -110,7 +110,7 @@ async function autenticarAPIsExternas(sessionId, credenciais = {}) {
       tokens.apostas1 = await loginComAutoRegistro(
         APIS.apostas.instancia1.baseUrl,
         '/auth/login',
-        ['/auth/register', '/auth/signup', '/register', '/usuarios'],
+        ['/auth/registrar', '/auth/register', '/auth/signup', '/register', '/usuarios'],
         usuario, senha
       );
       console.log('[TokenManager] ✅ Apostas (I1) autenticada');
@@ -179,7 +179,7 @@ async function tentarAuthNovamente(sessionId, api) {
 
   try {
     if (api === 'apostas1') {
-      token = await loginComAutoRegistro(APIS.apostas.instancia1.baseUrl, '/auth/login', ['/auth/register', '/auth/signup', '/register', '/usuarios'], cred.usuario, cred.senha);
+      token = await loginComAutoRegistro(APIS.apostas.instancia1.baseUrl, '/auth/login', ['/auth/registrar', '/auth/register', '/auth/signup', '/register', '/usuarios'], cred.usuario, cred.senha);
     } else if (api === 'apostadores1') {
       token = await loginComAutoRegistro(APIS.apostadores.instancia1.baseUrl, '/login', ['/register', '/auth/register', '/usuarios', '/auth/signup'], cred.usuario, cred.senha);
     } else if (api === 'lutas2' && APIS.lutas.instancia2.baseUrl) {
