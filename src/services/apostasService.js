@@ -1,18 +1,8 @@
 /**
- * services/apostasService.js
+ * services/apostasService.js — Integração com as duas instâncias da API de Apostas.
  *
- * Comunica com as duas instâncias da API de Apostas:
- *
- *   Instância 1 — Node.js / Vercel
- *     Autenticação: JWT RS256 (credenciais informadas no login do frontend)
- *     Todas as rotas protegidas exigem: Authorization: Bearer <token>
- *
- *   Instância 2 — Node.js / 187.77.235.119:5555
- *     Autenticação: RSA + AES-256-CBC híbrido (automático)
- *     Todas as rotas exigem o header: X-Encrypted: true
- *     Body do POST deve ser criptografado: { encryptedKey, iv, encryptedData }
- *
- *   em trânsito entre microserviços distribuídos.
+ * Instância 1: JWT Bearer (credenciais fornecidas no login).
+ * Instância 2: RSA+AES-256-CBC híbrido (criptografia automática).
  */
 
 const axios = require('axios');
@@ -21,28 +11,22 @@ const rsa = require('../utils/rsaHelper');
 const tokenManager = require('../utils/tokenManager');
 const cache = require('../utils/cache');
 
-// Controla se a chave pública da I2 foi carregada
 let chaveI2Carregada = false;
-
-
 
 async function inicializarApostas2() {
   const baseUrl = APIS.apostas.instancia2.baseUrl;
   if (!baseUrl || chaveI2Carregada) return;
 
   try {
-    // Obtém a chave pública RSA do servidor para criptografar os dados enviados
     const resp = await axios.get(`${baseUrl}/crypto/public-key`, { timeout: 10000 });
     const chave = resp.data?.publicKey || resp.data;
     rsa.setChaveApostas2(chave);
     chaveI2Carregada = true;
-    console.log('[Apostas I2]  Chave pública RSA carregada.');
+    console.log('[Apostas I2] Chave pública RSA carregada.');
   } catch (e) {
-    console.warn('[Apostas I2]   Não foi possível carregar chave pública:', e.message);
+    console.warn('[Apostas I2] Não foi possível carregar chave pública:', e.message);
   }
 }
-
-
 
 async function headersI1(sessionId) {
   let token = tokenManager.getToken(sessionId, 'apostas1');
@@ -51,8 +35,6 @@ async function headersI1(sessionId) {
   }
   return token ? { Authorization: `Bearer ${token}` } : null;
 }
-
-
 
 async function listar(sessionId, filtros = {}) {
   const queryStr = new URLSearchParams(filtros).toString();
@@ -74,7 +56,6 @@ async function listar(sessionId, filtros = {}) {
 
   const promessas = [];
 
-  // Instância 1
   if (!emCacheI1) {
     const url = `${APIS.apostas.instancia1.baseUrl}/apostas${queryStr ? '?' + queryStr : ''}`;
     const hdrs1Promise = headersI1(sessionId).then(hdrs1 => {
@@ -86,7 +67,6 @@ async function listar(sessionId, filtros = {}) {
     promessas.push(Promise.resolve({ isCache: true, data: emCacheI1, id: 'i1' }));
   }
 
-  // Instância 2
   if (!emCacheI2) {
     promessas.push(axios.get(`${APIS.apostas.instancia2.baseUrl}/apostas`, {
       headers: { 'X-Encrypted': 'true' },
@@ -98,7 +78,6 @@ async function listar(sessionId, filtros = {}) {
 
   const [res1, res2] = await Promise.allSettled(promessas);
 
-  // Processa I1
   if (res1.status === 'fulfilled') {
     if (res1.value.isCache) {
       resultado.push(...res1.value.data);
@@ -110,13 +89,11 @@ async function listar(sessionId, filtros = {}) {
     }
   } else {
     if (res1.reason?.response?.status === 401) {
-      console.warn('[Apostas I1] 401 Recebido. Reautenticando próxima vez...');
       tokenManager.tentarAuthNovamente(sessionId, 'apostas1');
     }
     console.warn('[Apostas I1] Falha no GET:', res1.reason.message || res1.reason);
   }
 
-  // Processa I2
   if (res2.status === 'fulfilled') {
     if (res2.value.isCache) {
       resultado.push(...res2.value.data);
@@ -153,7 +130,6 @@ async function criar(body, sessionId) {
   cache.invalidar('apostas:lista');
   const resultado = {};
 
-  // Instância 1 — JWT Bearer no header, body JSON normal
   const hdrs1 = await headersI1(sessionId);
   if (hdrs1) {
     try {
@@ -166,17 +142,8 @@ async function criar(body, sessionId) {
     resultado.instancia1 = { sucesso: false, erro: 'Token não disponível para I1' };
   }
 
-  // Instância 2 — body criptografado com RSA+AES (se a chave foi carregada)
   try {
-    let payload;
-
-    if (chaveI2Carregada) {
-      // Criptografa o body automaticamente antes de enviar
-      payload = rsa.criptografarParaApostas2(body);
-    } else {
-      // Fallback sem criptografia (pode ser rejeitado pela API)
-      payload = body;
-    }
+    const payload = chaveI2Carregada ? rsa.criptografarParaApostas2(body) : body;
 
     const resp = await axios.post(`${APIS.apostas.instancia2.baseUrl}/apostas`, payload, {
       headers: { 'X-Encrypted': 'true', 'Content-Type': 'application/json' },
@@ -201,7 +168,6 @@ async function atualizar(id, body, instancia, sessionId) {
     return { ...resp.data, _instancia: 1 };
   }
 
-  // I2 — apenas o campo 'valor' é atualizado conforme a API
   const resp = await axios.put(`${APIS.apostas.instancia2.baseUrl}/apostas/${id}`, body, {
     headers: { 'X-Encrypted': 'true', 'Content-Type': 'application/json' }, timeout: 15000,
   });

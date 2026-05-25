@@ -1,18 +1,9 @@
 /**
- * services/lutasService.js
+ * services/lutasService.js — Integração com as duas instâncias da API de Lutas.
  *
- * Comunica com as duas instâncias da API de Lutas:
- *
- *   Instância 1 — Spring Boot / Railway
- *     Autenticação: API Key fixa no header X-API-KEY
- *
- *   Instância 2 — Vercel / Node.js
- *     Autenticação: M2M RSA-PSS (headers x-api-nome e x-assinatura)
- *
- * GET lista: busca das duas instâncias e une os resultados
- * GET por ID / PUT / DELETE: escolhe a instância pelo query param ?instancia=1 ou 2
- * POST: envia para as duas instâncias (best-effort — falha em uma não cancela a outra)
- *
+ * GET lista: busca das duas instâncias e une os resultados.
+ * GET por ID / PUT / DELETE: escolhe a instância pelo query param ?instancia=1 ou 2.
+ * POST: envia para as duas instâncias (best-effort).
  */
 
 const axios = require('axios');
@@ -20,14 +11,10 @@ const APIS = require('../config/apis');
 const cache = require('../utils/cache');
 const rsa = require('../utils/rsaHelper');
 
-
-
-/** Instância 1 usa API Key fixa */
 function headersI1() {
   return { 'X-API-KEY': APIS.lutas.instancia1.apiKey };
 }
 
-/** Instância 2 usa assinatura RSA M2M */
 function headersI2(rota) {
   const nomeIntegrador = APIS.lutas.instancia2.nomeIntegrador;
   return {
@@ -36,26 +23,22 @@ function headersI2(rota) {
   };
 }
 
-
-
 async function listar() {
-  const cacheKeyI1 = `lutas:lista:i1`; // Não depende da sessão porque I1 usa API Key fixa
-  const cacheKeyI2 = `lutas:lista:i2`; // Agora I2 também não depende da sessão, é M2M
-  
+  const cacheKeyI1 = `lutas:lista:i1`;
+  const cacheKeyI2 = `lutas:lista:i2`;
+
   const emCacheI1 = cache.get(cacheKeyI1);
   const emCacheI2 = cache.get(cacheKeyI2);
   const resultado = [];
 
   const promessas = [];
 
-  // Instância 1
   if (!emCacheI1) {
     promessas.push(axios.get(`${APIS.lutas.instancia1.baseUrl}/lutas`, { headers: headersI1(), timeout: 15000 }));
   } else {
     promessas.push(Promise.resolve({ isCache: true, data: emCacheI1, id: 'i1' }));
   }
 
-  // Instância 2 (se configurada e com token)
   if (APIS.lutas.instancia2.baseUrl) {
     if (!emCacheI2) {
       try {
@@ -71,7 +54,8 @@ async function listar() {
 
   const resultados = await Promise.allSettled(promessas);
 
-  // Processa resultados (podem ser 1 ou 2 promises dependendo de APIS.lutas.instancia2.baseUrl)
+  const errosI2 = [];
+
   for (let i = 0; i < resultados.length; i++) {
     const res = resultados[i];
     const isI1 = (i === 0);
@@ -86,11 +70,25 @@ async function listar() {
         resultado.push(...novos);
       }
     } else {
+      const err = res.reason;
+      const status  = err.response?.status;
+      const body    = err.response?.data;
+      const msg     = err.message;
+
       if (!isI1) {
-        console.warn('[Lutas I2] Falha M2M. Verifique as chaves e cadastro no Vercel.');
+        console.error('[Lutas I2] Falha M2M:',
+          status ? `HTTP ${status}` : 'sem resposta',
+          body   ? JSON.stringify(body) : msg
+        );
+        errosI2.push({ status, body, msg });
+      } else {
+        console.warn('[Lutas I1] Falha no GET:', msg);
       }
-      console.warn(`[Lutas I${isI1 ? 1 : 2}] Falha no GET:`, res.reason.message || res.reason);
     }
+  }
+
+  if (errosI2.length > 0) {
+    resultado._erroI2 = errosI2[0];
   }
 
   return resultado;
@@ -104,7 +102,6 @@ async function buscarPorId(id, instancia) {
     return { ...resp.data, _instancia: 1 };
   }
 
-  // Instância 2
   const hdrs = headersI2(`/lutas/${id}`);
   const resp = await axios.get(`${APIS.lutas.instancia2.baseUrl}/lutas/${id}`, { headers: hdrs });
   return { ...resp.data, _instancia: 2 };
@@ -114,7 +111,6 @@ async function criar(body) {
   cache.invalidar('lutas:lista');
   const resultado = {};
 
-  // Cria na instância 1
   try {
     const resp = await axios.post(`${APIS.lutas.instancia1.baseUrl}/lutas`, body, { headers: headersI1() });
     resultado.instancia1 = { sucesso: true, dado: { ...resp.data, _instancia: 1 } };
@@ -122,7 +118,6 @@ async function criar(body) {
     resultado.instancia1 = { sucesso: false, erro: e.response?.data || e.message };
   }
 
-  // Cria na instância 2 (se configurada)
   if (APIS.lutas.instancia2.baseUrl) {
     try {
       const hdrs = headersI2('/lutas/');

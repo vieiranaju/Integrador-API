@@ -1,16 +1,11 @@
 /**
- * tokenManager.js
- *
- * Guarda os tokens JWT das APIs externas para cada usuário logado.
+ * utils/tokenManager.js — Gerencia tokens JWT das APIs externas por sessão.
  */
 
 const axios = require('axios');
 const APIS = require('../config/apis');
 
-// Mapa de sessões: { sessionId → { tokens: { apostas1: "token..." }, credenciais: { apostas1: {usuario, senha} } } }
 const sessoes = new Map();
-
-
 
 async function tentarRegistrar(baseUrl, usuario, senha, endpoints) {
   const corpo = { usuario, senha, nome: usuario, username: usuario, password: senha, email: `${usuario}@integrador.com` };
@@ -19,35 +14,32 @@ async function tentarRegistrar(baseUrl, usuario, senha, endpoints) {
     try {
       await axios.post(`${baseUrl}${endpoint}`, corpo, { timeout: 8000 });
       console.log(`[TokenManager] Usuário "${usuario}" registrado em ${endpoint}`);
-      return true; // Registro bem-sucedido
+      return true;
     } catch (e) {
-    
       if (e.response?.status === 409) {
         console.log(`[TokenManager] Usuário já existe em ${endpoint}, tentando login...`);
         return true;
       }
-      // Outros erros: tenta o próximo endpoint
     }
   }
-  return false; // Nenhum endpoint de registro funcionou
+  return false;
 }
 
 /**
  * Tenta fazer login em uma API externa.
- * Se falhar, tenta registrar o usuário e depois faz login novamente.
+ * Se falhar por credenciais inválidas, tenta registrar o usuário e faz login novamente.
  *
- * @param {string} baseUrl - URL base da API
- * @param {string} loginEndpoint - Endpoint de login (ex: '/auth/login')
- * @param {string[]} registroEndpoints - Endpoints de registro a tentar
+ * @param {string} baseUrl
+ * @param {string} loginEndpoint
+ * @param {string[]} registroEndpoints
  * @param {string} usuario
  * @param {string} senha
  * @param {string} campoToken - Campo onde o token vem na resposta ('token' ou 'access_token')
- * @returns {string|null} token ou null se falhou
+ * @returns {Promise<string|null>}
  */
 async function loginComAutoRegistro(baseUrl, loginEndpoint, registroEndpoints, usuario, senha, campoToken = 'token') {
   const corpo = { usuario, senha };
 
-  // Tentativa 1: Login direto
   try {
     const resp = await axios.post(`${baseUrl}${loginEndpoint}`, corpo, { timeout: 10000 });
     const token = resp.data[campoToken] || resp.data.token || resp.data.access_token;
@@ -55,7 +47,6 @@ async function loginComAutoRegistro(baseUrl, loginEndpoint, registroEndpoints, u
   } catch (e) {
     const status = e.response?.status;
 
-    // Se não for erro de credenciais (401/404/400), não adianta tentar registrar
     if (status && ![400, 401, 404, 422].includes(status)) {
       throw new Error(`Erro ${status} ao fazer login`);
     }
@@ -63,34 +54,29 @@ async function loginComAutoRegistro(baseUrl, loginEndpoint, registroEndpoints, u
     console.log(`[TokenManager] Login falhou (${status}) — tentando registrar o usuário...`);
   }
 
-  // Tentativa 2: Registra o usuário
   const registrado = await tentarRegistrar(baseUrl, usuario, senha, registroEndpoints);
 
   if (!registrado) {
     throw new Error('Não foi possível registrar o usuário nas APIs externas.');
   }
 
-  // Tentativa 3: Login após registro
   const resp = await axios.post(`${baseUrl}${loginEndpoint}`, corpo, { timeout: 10000 });
   const token = resp.data[campoToken] || resp.data.token || resp.data.access_token;
   if (!token) throw new Error('Token não retornado após registro.');
   return token;
 }
 
-
-
 /**
  * Faz login (com auto-registro) nas APIs externas e salva os tokens na sessão.
  *
- * @param {string} sessionId - ID único da sessão do usuário
- * @param {object} credenciais - { apostas1: {usuario, senha}, apostadores1: {...}, lutas2: {...} }
+ * @param {string} sessionId
+ * @param {object} credenciais - { apostas1: {usuario, senha}, apostadores1: {...} }
+ * @returns {Promise<{ tokens: string[], erros: object }>}
  */
 async function autenticarAPIsExternas(sessionId, credenciais = {}) {
   const tokens = {};
   const erros = {};
 
-  
-  // Login: POST /auth/login  |  Registro: POST /auth/register
   if (credenciais.apostas1) {
     const { usuario, senha } = credenciais.apostas1;
     try {
@@ -107,8 +93,6 @@ async function autenticarAPIsExternas(sessionId, credenciais = {}) {
     }
   }
 
-  
-  // Login: POST /login  |  Registro: POST /register ou /usuarios
   if (credenciais.apostadores1) {
     const { usuario, senha } = credenciais.apostadores1;
     try {
@@ -125,23 +109,23 @@ async function autenticarAPIsExternas(sessionId, credenciais = {}) {
     }
   }
 
-  
-  // API Lutas I2 usa M2M RSA-PSS, não usa JWT com login
-
-  // Salva os tokens e credenciais da sessão
   sessoes.set(sessionId, { tokens, credenciais });
 
   return { tokens: Object.keys(tokens), erros };
 }
 
-
-
-/** Retorna o token de uma API para uma sessão específica */
+/** Retorna o token de uma API para uma sessão específica. */
 function getToken(sessionId, api) {
   return sessoes.get(sessionId)?.tokens?.[api] || null;
 }
 
-/** Tenta reautenticar uma API on-the-fly se o token falhou/expirou */
+/**
+ * Tenta reautenticar uma API on-the-fly se o token falhou ou expirou.
+ *
+ * @param {string} sessionId
+ * @param {string} api
+ * @returns {Promise<string|null>}
+ */
 async function tentarAuthNovamente(sessionId, api) {
   const sessao = sessoes.get(sessionId);
   if (!sessao || !sessao.credenciais || !sessao.credenciais[api]) return null;
@@ -167,12 +151,12 @@ async function tentarAuthNovamente(sessionId, api) {
   return null;
 }
 
-/** Remove a sessão ao fazer logout */
+/** Remove a sessão ao fazer logout. */
 function removerSessao(sessionId) {
   sessoes.delete(sessionId);
 }
 
-/** Verifica se uma sessão existe */
+/** Verifica se uma sessão existe. */
 function sessaoExiste(sessionId) {
   return sessoes.has(sessionId);
 }
