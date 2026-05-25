@@ -27,7 +27,7 @@ const router = express.Router();
 const JWT_SECRET   = process.env.JWT_SECRET   || 'chave_secreta_padrao';
 const JWT_EXPIRES  = process.env.JWT_EXPIRES_IN || '24h';
 
-// ─── POST /auth/login ────────────────────────────────────────────────────────
+
 
 router.post('/login', async (req, res, next) => {
   try {
@@ -67,14 +67,14 @@ router.post('/login', async (req, res, next) => {
   }
 });
 
-// ─── POST /auth/logout ───────────────────────────────────────────────────────
+
 
 router.post('/logout', verificarToken, (req, res) => {
   tokenManager.removerSessao(req.usuario.sessionId);
   res.json({ mensagem: 'Logout realizado com sucesso.' });
 });
 
-// ─── GET /auth/status ────────────────────────────────────────────────────────
+
 
 router.get('/status', verificarToken, (req, res) => {
   res.json({

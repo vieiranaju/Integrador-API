@@ -12,7 +12,6 @@
  *     Todas as rotas exigem o header: X-Encrypted: true
  *     Body do POST deve ser criptografado: { encryptedKey, iv, encryptedData }
  *
- *   Conceito de SD: Diferentes estratégias de segurança para proteger dados financeiros
  *   em trânsito entre microserviços distribuídos.
  */
 
@@ -25,7 +24,7 @@ const cache = require('../utils/cache');
 // Controla se a chave pública da I2 foi carregada
 let chaveI2Carregada = false;
 
-// ─── Inicialização da I2 (chamado no startup) ────────────────────────────────
+
 
 async function inicializarApostas2() {
   const baseUrl = APIS.apostas.instancia2.baseUrl;
@@ -37,13 +36,13 @@ async function inicializarApostas2() {
     const chave = resp.data?.publicKey || resp.data;
     rsa.setChaveApostas2(chave);
     chaveI2Carregada = true;
-    console.log('[Apostas I2] ✅ Chave pública RSA carregada.');
+    console.log('[Apostas I2]  Chave pública RSA carregada.');
   } catch (e) {
-    console.warn('[Apostas I2] ⚠️  Não foi possível carregar chave pública:', e.message);
+    console.warn('[Apostas I2]   Não foi possível carregar chave pública:', e.message);
   }
 }
 
-// ─── Headers ────────────────────────────────────────────────────────────────
+
 
 async function headersI1(sessionId) {
   let token = tokenManager.getToken(sessionId, 'apostas1');
@@ -53,7 +52,7 @@ async function headersI1(sessionId) {
   return token ? { Authorization: `Bearer ${token}` } : null;
 }
 
-// ─── Funções de serviço ─────────────────────────────────────────────────────
+
 
 async function listar(sessionId, filtros = {}) {
   const queryStr = new URLSearchParams(filtros).toString();

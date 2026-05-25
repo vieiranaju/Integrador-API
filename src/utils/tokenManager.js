@@ -9,7 +9,6 @@
  *   3. Após o registro, tenta o login novamente
  *   4. Salva o token retornado na sessão
  *
- * Conceito de SD: Gerenciamento centralizado de identidade — o integrador
  * lida com toda a complexidade de autenticação em múltiplos serviços.
  */
 
@@ -19,7 +18,7 @@ const APIS = require('../config/apis');
 // Mapa de sessões: { sessionId → { tokens: { apostas1: "token..." }, credenciais: { apostas1: {usuario, senha} } } }
 const sessoes = new Map();
 
-// ─── Funções auxiliares de registro ─────────────────────────────────────────
+
 
 /**
  * Tenta registrar um usuário em uma API externa.
@@ -31,7 +30,7 @@ async function tentarRegistrar(baseUrl, usuario, senha, endpoints) {
   for (const endpoint of endpoints) {
     try {
       await axios.post(`${baseUrl}${endpoint}`, corpo, { timeout: 8000 });
-      console.log(`[TokenManager] ✅ Usuário "${usuario}" registrado em ${endpoint}`);
+      console.log(`[TokenManager] Usuário "${usuario}" registrado em ${endpoint}`);
       return true; // Registro bem-sucedido
     } catch (e) {
       // 409 = usuário já existe (também é OK, o login vai funcionar)
@@ -90,7 +89,7 @@ async function loginComAutoRegistro(baseUrl, loginEndpoint, registroEndpoints, u
   return token;
 }
 
-// ─── Autenticação principal ──────────────────────────────────────────────────
+
 
 /**
  * Faz login (com auto-registro) nas APIs externas e salva os tokens na sessão.
@@ -102,7 +101,7 @@ async function autenticarAPIsExternas(sessionId, credenciais = {}) {
   const tokens = {};
   const erros = {};
 
-  // --- API Apostas (instância 1) — JWT RS256 ---
+  
   // Login: POST /auth/login  |  Registro: POST /auth/register
   if (credenciais.apostas1) {
     const { usuario, senha } = credenciais.apostas1;
@@ -113,14 +112,14 @@ async function autenticarAPIsExternas(sessionId, credenciais = {}) {
         ['/auth/registrar', '/auth/register', '/auth/signup', '/register', '/usuarios'],
         usuario, senha
       );
-      console.log('[TokenManager] ✅ Apostas (I1) autenticada');
+      console.log('[TokenManager] Apostas (I1) autenticada');
     } catch (e) {
       erros.apostas1 = e.response?.data?.message || e.message;
-      console.warn('[TokenManager] ⚠️  Apostas (I1):', erros.apostas1);
+      console.warn('[TokenManager] Apostas (I1):', erros.apostas1);
     }
   }
 
-  // --- API Apostadores (instância 1) — JWT HS256 ---
+  
   // Login: POST /login  |  Registro: POST /register ou /usuarios
   if (credenciais.apostadores1) {
     const { usuario, senha } = credenciais.apostadores1;
@@ -131,14 +130,14 @@ async function autenticarAPIsExternas(sessionId, credenciais = {}) {
         ['/register', '/auth/register', '/usuarios', '/auth/signup'],
         usuario, senha
       );
-      console.log('[TokenManager] ✅ Apostadores (I1) autenticada');
+      console.log('[TokenManager] Apostadores (I1) autenticada');
     } catch (e) {
       erros.apostadores1 = e.response?.data?.message || e.message;
-      console.warn('[TokenManager] ⚠️  Apostadores (I1):', erros.apostadores1);
+      console.warn('[TokenManager] Apostadores (I1):', erros.apostadores1);
     }
   }
 
-  // --- API Lutas (instância 2) — JWT (se URL configurada) ---
+  
   if (credenciais.lutas2 && APIS.lutas.instancia2.baseUrl) {
     const { usuario, senha } = credenciais.lutas2;
     try {
@@ -149,10 +148,10 @@ async function autenticarAPIsExternas(sessionId, credenciais = {}) {
         usuario, senha,
         'access_token' // FastAPI/Python usa 'access_token'
       );
-      console.log('[TokenManager] ✅ Lutas (I2) autenticada');
+      console.log('[TokenManager] Lutas (I2) autenticada');
     } catch (e) {
       erros.lutas2 = e.response?.data?.message || e.message;
-      console.warn('[TokenManager] ⚠️  Lutas (I2):', erros.lutas2);
+      console.warn('[TokenManager] Lutas (I2):', erros.lutas2);
     }
   }
 
@@ -162,7 +161,7 @@ async function autenticarAPIsExternas(sessionId, credenciais = {}) {
   return { tokens: Object.keys(tokens), erros };
 }
 
-// ─── Funções de sessão ───────────────────────────────────────────────────────
+
 
 /** Retorna o token de uma API para uma sessão específica */
 function getToken(sessionId, api) {
@@ -188,11 +187,11 @@ async function tentarAuthNovamente(sessionId, api) {
 
     if (token) {
       sessao.tokens[api] = token;
-      console.log(`[TokenManager] ✅ Reautenticação on-the-fly concluída para ${api}`);
+      console.log(`[TokenManager] Reautenticação on-the-fly concluída para ${api}`);
       return token;
     }
   } catch (e) {
-    console.warn(`[TokenManager] ⚠️  Falha na reautenticação on-the-fly para ${api}:`, e.message);
+    console.warn(`[TokenManager] Falha na reautenticação on-the-fly para ${api}:`, e.message);
   }
   return null;
 }

@@ -7,7 +7,6 @@
  *   3. Registra todas as rotas
  *   4. Inicia o servidor na porta configurada
  *
- * Conceito de SD: API Gateway — ponto único de entrada que orquestra
  * múltiplos microserviços distribuídos de forma transparente para o cliente.
  *
  * Fluxo de uma requisição:
@@ -38,7 +37,7 @@ const rotaApostadores = require('./routes/apostadores');
 const app  = express();
 const PORT = process.env.PORT || 4000;
 
-// ─── Configurações do Express ────────────────────────────────────────────────
+
 
 // Permite que o frontend acesse a API (Cross-Origin Resource Sharing)
 app.use(cors({
@@ -49,7 +48,7 @@ app.use(cors({
 
 app.use(express.json()); // Interpreta o body das requisições como JSON
 
-// ─── Rota pública de status ──────────────────────────────────────────────────
+
 
 app.get('/', (req, res) => {
   res.json({
@@ -61,11 +60,11 @@ app.get('/', (req, res) => {
   });
 });
 
-// ─── Rotas públicas (sem autenticação) ──────────────────────────────────────
+
 
 app.use('/auth', rotaAuth);
 
-// ─── Rotas protegidas (exigem token JWT) ─────────────────────────────────────
+
 // O middleware verificarToken valida o token antes de qualquer rota abaixo
 
 app.use('/lutas',       verificarToken, rotaLutas);
@@ -73,11 +72,11 @@ app.use('/lutadores',   verificarToken, rotaLutadores);
 app.use('/apostas',     verificarToken, rotaApostas);
 app.use('/apostadores', verificarToken, rotaApostadores);
 
-// ─── Middleware de erro (sempre por último) ───────────────────────────────────
+
 
 app.use(errorHandler);
 
-// ─── Inicialização assíncrona ─────────────────────────────────────────────────
+
 
 async function iniciar() {
   console.log('\n=== API INTEGRADORA — INICIANDO ===\n');
@@ -99,7 +98,7 @@ async function iniciar() {
 
   // Passo 4: Inicia o servidor
   app.listen(PORT, () => {
-    console.log(`\n✅ Servidor rodando em http://localhost:${PORT}`);
+    console.log(`\n Servidor rodando em http://localhost:${PORT}`);
     console.log('\nEndpoints disponíveis:');
     console.log(`  POST http://localhost:${PORT}/auth/login   ← faça login aqui primeiro`);
     console.log(`  GET  http://localhost:${PORT}/lutas`);

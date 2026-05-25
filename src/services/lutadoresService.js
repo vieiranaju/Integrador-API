@@ -6,13 +6,12 @@
  *   Instância 1 — Spring Boot / Render
  *     Autenticação: nenhuma (API pública)
  *     Respostas: JSON normal
- *     ⚠️  Path real: /api/lutadores (confirmado via /v3/api-docs)
+ *       Path real: /api/lutadores (confirmado via /v3/api-docs)
  *
  *   Instância 2 — Java puro / Heroku (RSA-OAEP bidirecional)
  *     Autenticação: handshake RSA (feito automaticamente no startup)
  *     Respostas: array de chunks Base64 → descriptografados aqui
  *
- *   Conceito de SD: Segurança M2M (Machine-to-Machine) com criptografia assimétrica.
  *   O servidor criptografa as respostas com nossa chave pública; só nós podemos ler.
  *
  * Handshake RSA (executado uma vez no startup):
@@ -29,7 +28,7 @@ const cache = require('../utils/cache');
 // Controla se o handshake com I2 foi realizado
 let handshakeConcluido = false;
 
-// ─── Handshake RSA (chamado no startup do servidor) ─────────────────────────
+
 
 async function inicializarHandshake() {
   const baseUrl = APIS.lutadores.instancia2.baseUrl;
@@ -44,13 +43,13 @@ async function inicializarHandshake() {
     await axios.post(`${baseUrl}/handshake`, { publicKey: rsa.getChavePublica() });
 
     handshakeConcluido = true;
-    console.log('[Lutadores I2] ✅ Handshake RSA concluído.');
+    console.log('[Lutadores I2]  Handshake RSA concluído.');
   } catch (e) {
-    console.warn('[Lutadores I2] ⚠️  Handshake falhou:', e.message);
+    console.warn('[Lutadores I2]   Handshake falhou:', e.message);
   }
 }
 
-// ─── Descriptografia da resposta da I2 ─────────────────────────────────────
+
 
 /**
  * A I2 indica respostas criptografadas com o header X-Content-Encrypted: true
@@ -73,7 +72,7 @@ function descriptografarSeNecessario(response) {
   return JSON.parse(response.data);
 }
 
-// ─── Funções de serviço ─────────────────────────────────────────────────────
+
 
 async function listar() {
   const resultado = [];

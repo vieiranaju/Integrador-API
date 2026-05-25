@@ -4,7 +4,6 @@
  * Configuração centralizada de todas as APIs externas.
  * Cada domínio tem duas instâncias (I1 e I2) rodando em servidores diferentes.
  *
- * Conceito de SD: Alta disponibilidade — se uma instância cair, a outra continua.
  */
 require('dotenv').config();
 

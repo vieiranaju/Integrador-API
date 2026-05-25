@@ -1,11 +1,7 @@
 /**
  * middleware/auth.js
- *
  * Verifica o token JWT antes de processar qualquer rota protegida.
  * Se o token for válido, disponibiliza os dados do usuário em req.usuario.
- *
- * Conceito de SD: Autenticação centralizada — o integrador valida uma única vez
- * e repassa internamente para as APIs externas.
  */
 const jwt = require('jsonwebtoken');
 

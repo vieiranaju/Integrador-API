@@ -16,7 +16,6 @@
  *              e a CHAVE AES com RSA (seguro)
  *    - Enviamos: { encryptedKey, iv, encryptedData }
  *
- * Conceito de SD: Criptografia assimétrica garante confidencialidade
  * em comunicações entre microserviços distribuídos.
  */
 

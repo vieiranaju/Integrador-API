@@ -4,7 +4,6 @@
  * Cache simples em memória usando um Map do JavaScript.
  * Evita chamar as APIs externas toda vez que o frontend faz uma requisição.
  *
- * Conceito de SD: Caching reduz latência e diminui carga nos microserviços.
  */
 
 // Guarda os dados: { chave → { dado, expiraEm } }

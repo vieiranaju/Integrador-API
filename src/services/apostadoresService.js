@@ -12,7 +12,6 @@
  *     Campos em snake_case: { nome, idade, chave_pix }
  *     O integrador normaliza os campos automaticamente entre as duas instâncias.
  *
- *   Conceito de SD: Normalização de dados — o integrador padroniza formatos
  *   diferentes entre microserviços desenvolvidos por equipes distintas.
  */
 
@@ -21,7 +20,7 @@ const APIS = require('../config/apis');
 const tokenManager = require('../utils/tokenManager');
 const cache = require('../utils/cache');
 
-// ─── Headers ────────────────────────────────────────────────────────────────
+
 
 async function headersI1(sessionId) {
   let token = tokenManager.getToken(sessionId, 'apostadores1');
@@ -31,7 +30,7 @@ async function headersI1(sessionId) {
   return token ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } : null;
 }
 
-// ─── Normalização de campos ─────────────────────────────────────────────────
+
 
 /** Converte para o formato camelCase que a I1 espera */
 function paraI1(body) {
@@ -51,7 +50,7 @@ function paraI2(body) {
   };
 }
 
-// ─── Funções de serviço ─────────────────────────────────────────────────────
+
 
 async function listar(sessionId) {
   const resultado = [];

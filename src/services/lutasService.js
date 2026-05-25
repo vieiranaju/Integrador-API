@@ -13,7 +13,6 @@
  * GET por ID / PUT / DELETE: escolhe a instância pelo query param ?instancia=1 ou 2
  * POST: envia para as duas instâncias (best-effort — falha em uma não cancela a outra)
  *
- * Conceito de SD: Agregação de dados de múltiplas fontes distribuídas.
  */
 
 const axios = require('axios');
@@ -21,7 +20,7 @@ const APIS = require('../config/apis');
 const tokenManager = require('../utils/tokenManager');
 const cache = require('../utils/cache');
 
-// ─── Headers de autenticação ────────────────────────────────────────────────
+
 
 /** Instância 1 usa API Key fixa */
 function headersI1() {
@@ -37,7 +36,7 @@ async function headersI2(sessionId) {
   return token ? { Authorization: `Bearer ${token}` } : null;
 }
 
-// ─── Funções de serviço ─────────────────────────────────────────────────────
+
 
 async function listar(sessionId) {
   const cacheKeyI1 = `lutas:lista:i1`; // Não depende da sessão porque I1 usa API Key fixa
