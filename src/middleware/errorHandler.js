@@ -1,17 +1,12 @@
-/**
- * middleware/errorHandler.js — Captura erros não tratados e retorna resposta padronizada.
- * Diferencia erros das APIs externas (axios) de erros internos.
- */
-
 // eslint-disable-next-line no-unused-vars
 function errorHandler(err, req, res, next) {
   console.error(`[Erro] ${req.method} ${req.path}:`, err.message);
 
   if (err.isAxiosError) {
     return res.status(err.response?.status || 502).json({
-      erro: 'Falha ao comunicar com a API externa',
+      erro:     'Falha ao comunicar com a API externa',
       detalhes: err.response?.data || err.message,
-      url: err.config?.url,
+      url:      err.config?.url,
     });
   }
 

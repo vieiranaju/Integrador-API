@@ -1,46 +1,29 @@
-/**
- * config/apis.js — Configuração centralizada de todas as APIs externas.
- */
 require('dotenv').config();
 
 module.exports = {
-
   lutas: {
     instancia1: {
       baseUrl: process.env.LUTAS1_BASE_URL || 'https://bet3m-production.up.railway.app',
       apiKey:  process.env.LUTAS1_API_KEY  || 'bet3M-UENP',
     },
     instancia2: {
-      baseUrl: process.env.LUTAS2_BASE_URL || 'https://betting-api-beta.vercel.app',
-      nomeIntegrador: process.env.NOME_INTEGRADOR || 'bet3M',
+      baseUrl:        process.env.LUTAS2_BASE_URL    || 'https://betting-api-beta.vercel.app',
+      nomeIntegrador: process.env.NOME_INTEGRADOR    || 'bet3M',
     },
   },
 
   lutadores: {
-    instancia1: {
-      baseUrl: process.env.LUTADORES1_BASE_URL || 'https://api-lutadoressd.onrender.com',
-    },
-    instancia2: {
-      baseUrl: process.env.LUTADORES2_BASE_URL || 'https://lutadores-api-22f61a69f511.herokuapp.com',
-    },
+    instancia1: { baseUrl: process.env.LUTADORES1_BASE_URL || 'https://api-lutadoressd.onrender.com' },
+    instancia2: { baseUrl: process.env.LUTADORES2_BASE_URL || 'https://lutadores-api-22f61a69f511.herokuapp.com' },
   },
 
   apostas: {
-    instancia1: {
-      baseUrl: process.env.APOSTAS1_BASE_URL || 'https://api-aposta-lutas.vercel.app',
-    },
-    instancia2: {
-      baseUrl: process.env.APOSTAS2_BASE_URL || 'http://187.77.235.119:5555',
-    },
+    instancia1: { baseUrl: process.env.APOSTAS1_BASE_URL || 'https://api-aposta-lutas.vercel.app' },
+    instancia2: { baseUrl: process.env.APOSTAS2_BASE_URL || 'http://187.77.235.119:5555' },
   },
 
   apostadores: {
-    instancia1: {
-      baseUrl: process.env.APOSTADORES1_BASE_URL || 'https://api-apostadores-fight-azure.vercel.app',
-    },
-    instancia2: {
-      baseUrl: process.env.APOSTADORES2_BASE_URL || 'https://api-sd-df8o.onrender.com',
-    },
+    instancia1: { baseUrl: process.env.APOSTADORES1_BASE_URL || 'https://api-apostadores-fight-azure.vercel.app' },
+    instancia2: { baseUrl: process.env.APOSTADORES2_BASE_URL || 'https://api-sd-df8o.onrender.com' },
   },
-
 };
